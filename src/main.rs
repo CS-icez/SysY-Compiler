@@ -2,7 +2,9 @@ use std::env::args;
 use std::fs::read_to_string;
 use std::io::Result;
 
-pub mod frontend;
+pub mod ast;
+mod frontend;
+mod midend;
 
 fn main() -> Result<()> {
   let mut args = args();
@@ -12,7 +14,8 @@ fn main() -> Result<()> {
   args.next();
   let output = args.next().unwrap();
   let input = read_to_string(input)?;
-  let ast = frontend::parser::CompUnitParser::new().parse(&input).unwrap();
-  println!("{:#?}", ast);
+  let ast = frontend::to_ast(&input);
+  let koopa_text = midend::to_koopa_text(&ast);
+  println!("{}", koopa_text);
   Ok(())
 }
