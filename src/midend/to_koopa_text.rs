@@ -1,4 +1,4 @@
-use crate::ast::*;
+use crate::frontend::ast::*;
 
 pub trait ToKoopaText {
     fn to_koopa_text(&self) -> String;

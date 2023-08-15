@@ -1,3 +1,6 @@
 /target
 /.vscode/
 /temp/
+/autotest/
+/script/
+/my_workflow.md

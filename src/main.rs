@@ -1,21 +1,35 @@
-use std::env::args;
-use std::fs::read_to_string;
-use std::io::Result;
+use std::env;
+use std::fs;
+use std::io::Write;
+use frontend::CompUnit;
+use midend::ToKoopaText;
+use backend::to_riscv_text;
 
-pub mod ast;
 mod frontend;
 mod midend;
+mod backend;
 
-fn main() -> Result<()> {
-  let mut args = args();
-  args.next();
+fn main() -> std::io::Result<()> {
+  let mut args = env::args();
+  let _cmd = args.next().unwrap();
   let mode = args.next().unwrap();
   let input = args.next().unwrap();
-  args.next();
+  assert_eq!(args.next().unwrap(), "-o");
   let output = args.next().unwrap();
-  let input = read_to_string(input)?;
-  let ast = frontend::to_ast(&input);
-  let koopa_text = midend::to_koopa_text(&ast);
-  println!("{}", koopa_text);
+
+  let input = fs::read_to_string(input)?;
+  let mut output = fs::File::create(output).unwrap();
+
+  let res = match &mode[..] {
+    "-koopa" => {
+      CompUnit::from(&input[..]).to_koopa_text()
+    }
+    "-riscv" => {
+      to_riscv_text(&CompUnit::from(&input[..]).to_koopa_program())
+    }
+    _ => unreachable!()
+  };
+
+  output.write_all(res.as_bytes())?;
   Ok(())
 }
