@@ -2,7 +2,6 @@
 pub type CompUnit = FuncDef;
 
 /// FuncDef ::= FuncType IDENT "(" ")" Block
-#[derive(Debug)]
 pub struct FuncDef {
     pub func_type: FuncType,
     pub ident: String,
@@ -10,20 +9,43 @@ pub struct FuncDef {
 }
 
 /// FuncType ::= "int"
-#[derive(Debug)]
 pub enum FuncType {
     Int,
 }
 
 /// Block ::= "{" Stmt "}"
-#[derive(Debug)]
 pub struct Block {
     pub stmt: Stmt,
 }
 
-/// Stmt ::= "return" Number ";"
-/// Number ::= INT_CONST
-#[derive(Debug)]
+/// Stmt ::= "return" Exp ";"
 pub struct Stmt {
-    pub number: i32,
+    pub exp: Exp,
+}
+
+/// Number ::= INT_CONST
+pub struct Number {
+    pub int_const: i32,
+}
+
+/// Exp ::= UnaryExp
+pub struct Exp {
+    pub unary_exp: UnaryExp,
+}
+
+/// PrimaryExp ::= "(" Exp ")" | Number
+pub enum PrimaryExp {
+    BracketedExp {bexp: Box<Exp> },
+    Num { number: Number },
+}
+
+/// UnaryExp ::= PrimaryExp | UnaryOp UnaryExp;
+pub enum UnaryExp {
+    Primary { primary_bexp: Box<PrimaryExp> },
+    OpExp { op: UnaryOp, bexp: Box<UnaryExp> },
+}
+
+/// UnaryOp ::= "+" | "-" | "!"
+pub enum UnaryOp {
+    Plus, Minus, Not,
 }

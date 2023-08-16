@@ -7,7 +7,8 @@ edition = "2021"
 
 [dependencies]
 lalrpop-util ={ version = "0.20.0", features = ["lexer"] }
-koopa = { version =  "0.0.7" }
+koopa = "0.0.7"
+lazy_static = "1.4.0"
 
 [build-dependencies]
 lalrpop = "0.20.0"

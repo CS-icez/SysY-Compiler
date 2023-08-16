@@ -2,12 +2,12 @@ use std::env;
 use std::fs;
 use std::io::Write;
 use frontend::CompUnit;
-use midend::ToKoopaText;
-use backend::to_riscv_text;
+use backend::riscv_text_from;
 
 mod frontend;
 mod midend;
 mod backend;
+pub mod token_generator;
 
 fn main() -> std::io::Result<()> {
   let mut args = env::args();
@@ -25,7 +25,7 @@ fn main() -> std::io::Result<()> {
       CompUnit::from(&input[..]).to_koopa_text()
     }
     "-riscv" => {
-      to_riscv_text(&CompUnit::from(&input[..]).to_koopa_program())
+      riscv_text_from(&CompUnit::from(&input[..]).to_koopa_program())
     }
     _ => unreachable!()
   };

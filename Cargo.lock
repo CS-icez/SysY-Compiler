@@ -505,6 +505,7 @@ dependencies = [
  "koopa",
  "lalrpop",
  "lalrpop-util",
+ "lazy_static",
 ]
 
 [[package]]

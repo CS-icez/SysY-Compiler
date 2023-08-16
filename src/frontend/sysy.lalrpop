@@ -23,9 +23,9 @@ FuncType: FuncType = "int" => FuncType::Int;
 
 Block: Block = "{" <stmt: Stmt> "}" => Block { <> };
 
-Stmt: Stmt = "return" <number: Number> ";" => Stmt { <> };
+Stmt: Stmt = "return" <exp: Exp> ";" => Stmt { <> };
 
-Number: i32 = <num: IntConst> => <>;
+Number: Number = <int_const: IntConst> => Number { <> };
 
 Ident: String = r"[_a-zA-Z][_a-zA-Z0-9]*" => <>.to_string();
 
@@ -34,3 +34,22 @@ IntConst: i32 = {
     r"0[0-7]*" => i32::from_str_radix(<>, 8).unwrap(),
     r"0[xX][0-9a-fA-F]+" => i32::from_str_radix(&<>[2..], 16).unwrap(),
 }
+
+Exp: Exp = <unary_exp: UnaryExp> => Exp { <> };
+
+PrimaryExp: PrimaryExp = {
+    "(" <exp: Exp> ")" => PrimaryExp::BracketedExp { bexp: Box::new(exp) },
+    <number: Number> => PrimaryExp::Num { <> },
+};
+
+UnaryExp: UnaryExp = {
+    <exp: PrimaryExp> => UnaryExp::Primary { primary_bexp: Box::new(exp) },
+    <op: UnaryOp> <exp: UnaryExp> => UnaryExp::OpExp { op, bexp: Box::new(exp) },
+};
+
+UnaryOp: UnaryOp = {
+    "+" => UnaryOp::Plus,
+    "-" => UnaryOp::Minus,
+    "!" => UnaryOp::Not,
+};
+
