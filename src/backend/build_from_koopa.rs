@@ -15,6 +15,35 @@ lazy_static!{
     static ref TOKEN_GEN: TokenGenerator = TokenGenerator::new("label");
 }
 
+macro_rules! push_inst {
+    (Inst::$T:ident, PushBinary, $rhs:expr, $lhs:expr) => {
+        unsafe {
+            riscv_prog.push_inst(Inst::$T {
+                rd: $rhs.clone(),
+                rs1: $lhs.clone(),
+                rs2: $rhs.clone(),
+            });
+        }
+    };
+    (Inst::$T:ident, PushBinaryImm, $rs:expr, $imm12:literal) => {
+        unsafe {
+            riscv_prog.push_inst(Inst::$T {
+                rd: $rs.clone(),
+                rs: $rs.clone(),
+                imm12: $imm12,
+            });
+        }
+    };
+    (Inst::$T:ident, PushUnary, $rd:expr, $rs:expr) => {
+        unsafe {
+            riscv_prog.push_inst(Inst::$T {
+                rd: $rd.clone(),
+                rs: $rs.clone(),
+            });
+        }
+    };
+}
+
 impl riscv::Program {
     pub fn build_from_koopa(prog: &entities::Program) {
         for &func in prog.func_layout() {
@@ -101,45 +130,35 @@ impl riscv::Inst {
                 ).unwrap();
                 match binary.op() {
                     NotEq => {
-                        unsafe {
-                            riscv_prog.push_inst(Inst::Xor {
-                                rd: rhs.clone(),
-                                rs1: lhs.clone(),
-                                rs2: rhs.clone()
-                            });
-                            riscv_prog.push_inst(Inst::Snez {
-                                rd: rhs.clone(),
-                                rs: rhs.clone(),
-                            });
+                        if lhs != "x0" {
+                            push_inst!(Inst::Xor, PushBinary, rhs, lhs);
                         }
+                        push_inst!(Inst::Seqz, PushUnary, rhs, rhs);
                     }
                     Eq => {
-                        unsafe {
-                            riscv_prog.push_inst(Inst::Xor {
-                                rd: rhs.clone(),
-                                rs1: lhs.clone(),
-                                rs2: rhs.clone(),
-                            });
-                            riscv_prog.push_inst(Inst::Seqz {
-                                rd: rhs.clone(),
-                                rs: rhs.clone(),
-                            });
+                        if lhs != "x0" {
+                            push_inst!(Inst::Xor, PushBinary, rhs, lhs);
                         }
+                        push_inst!(Inst::Snez, PushUnary, rhs, rhs);
                     }
-                    Sub => {
-                        unsafe { riscv_prog.push_inst(Inst::Sub {
-                            rd: rhs.clone(),
-                            rs1: lhs.clone(),
-                            rs2: rhs.clone(),
-                        })};
+                    Gt => push_inst!(Inst::Sgt, PushBinary, rhs, lhs),
+                    Lt => push_inst!(Inst::Slt, PushBinary, rhs, lhs),
+                    Ge => {
+                        push_inst!(Inst::Sgt, PushBinary, rhs, lhs);
+                        push_inst!(Inst::Xori, PushBinaryImm, rhs, 1);
                     }
-                    Xor => {
-                        unsafe { riscv_prog.push_inst(Inst::Xor {
-                            rd: rhs.clone(),
-                            rs1: lhs.clone(),
-                            rs2: rhs.clone(),
-                        })};
+                    Le => {
+                        push_inst!(Inst::Slt, PushBinary, rhs, lhs);
+                        push_inst!(Inst::Xori, PushBinaryImm, rhs, 1);
                     }
+                    Add => push_inst!(Inst::Add, PushBinary, rhs, lhs),
+                    Sub => push_inst!(Inst::Sub, PushBinary, rhs, lhs),
+                    Mul => push_inst!(Inst::Mul, PushBinary, rhs, lhs),
+                    Div => push_inst!(Inst::Div, PushBinary, rhs, lhs),
+                    Mod => push_inst!(Inst::Rem, PushBinary, rhs, lhs),
+                    And => push_inst!(Inst::And, PushBinary, rhs, lhs),
+                    Or => push_inst!(Inst::Or, PushBinary, rhs, lhs),
+                    Xor => push_inst!(Inst::Xor, PushBinary, rhs, lhs),
                     _ => unreachable!()
                 }
                 REG_MGR.free(&lhs);

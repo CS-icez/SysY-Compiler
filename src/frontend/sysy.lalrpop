@@ -35,7 +35,7 @@ IntConst: i32 = {
     r"0[xX][0-9a-fA-F]+" => i32::from_str_radix(&<>[2..], 16).unwrap(),
 }
 
-Exp: Exp = <unary_exp: UnaryExp> => Exp { <> };
+Exp: Exp = <add_exp: LOrExp> => Exp { <> };
 
 PrimaryExp: PrimaryExp = {
     "(" <exp: Exp> ")" => PrimaryExp::BracketedExp { bexp: Box::new(exp) },
@@ -44,7 +44,10 @@ PrimaryExp: PrimaryExp = {
 
 UnaryExp: UnaryExp = {
     <exp: PrimaryExp> => UnaryExp::Primary { primary_bexp: Box::new(exp) },
-    <op: UnaryOp> <exp: UnaryExp> => UnaryExp::OpExp { op, bexp: Box::new(exp) },
+    <op: UnaryOp> <exp: UnaryExp> => UnaryExp::OpUnary {
+        op,
+        unary_bexp: Box::new(exp),
+    }
 };
 
 UnaryOp: UnaryOp = {
@@ -53,3 +56,77 @@ UnaryOp: UnaryOp = {
     "!" => UnaryOp::Not,
 };
 
+MulExp: MulExp = {
+    <exp: UnaryExp> => MulExp::Unary { unary_bexp: Box::new(exp) },
+    <exp: MulExp> <op: MulOp> <unary: UnaryExp> => MulExp::MulOpUnary {
+        bexp: Box::new(exp),
+        op,
+        unary_bexp: Box::new(unary),
+    }
+};
+
+MulOp: MulOp = {
+    "*" => MulOp::Mul,
+    "/" => MulOp::Div,
+    "%" => MulOp::Rem,
+};
+
+AddExp: AddExp = {
+    <exp: MulExp> => AddExp::Mul { mul_bexp: Box::new(exp) },
+    <exp: AddExp> <op: AddOp> <mul: MulExp> => AddExp::AddOpMul {
+        bexp: Box::new(exp),
+        op,
+        mul_bexp: Box::new(mul),
+    }
+}
+
+AddOp: AddOp = {
+    "+" => AddOp::Add,
+    "-" => AddOp::Sub,
+};
+
+RelExp: RelExp = {
+    <exp: AddExp> => RelExp::Add { add_bexp: Box::new(exp) },
+    <exp: RelExp> <op: RelOp> <add: AddExp> => RelExp::RelOpAdd {
+        bexp: Box::new(exp),
+        op,
+        add_bexp: Box::new(add),
+    }
+};
+
+RelOp: RelOp = {
+    "<" => RelOp::Lt,
+    "<=" => RelOp::Le,
+    ">" => RelOp::Gt,
+    ">=" => RelOp::Ge,
+};
+
+EqExp: EqExp = {
+    <exp: RelExp> => EqExp::Rel { rel_bexp: Box::new(exp) },
+    <exp: EqExp> <op: EqOp> <rel: RelExp> => EqExp::EqOpRel {
+        bexp: Box::new(exp),
+        op,
+        rel_bexp: Box::new(rel),
+    }
+};
+
+EqOp: EqOp = {
+    "==" => EqOp::Eq,
+    "!=" => EqOp::Ne,
+};
+
+LAndExp: LAndExp = {
+    <exp: EqExp> => LAndExp::Eq { eq_bexp: Box::new(exp) },
+    <exp: LAndExp> "&&" <eq: EqExp> => LAndExp::LAndEq {
+        bexp: Box::new(exp),
+        eq_bexp: Box::new(eq),
+    }
+};
+
+LOrExp: LOrExp = {
+    <exp: LAndExp> => LOrExp::LAnd { land_bexp: Box::new(exp) },
+    <exp: LOrExp> "||" <land: LAndExp> => LOrExp::LOrLAnd {
+        bexp: Box::new(exp),
+        land_bexp: Box::new(land),
+    }
+};

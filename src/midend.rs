@@ -20,6 +20,8 @@ impl CompUnit {
         self.generate_koopa_text();
         let mut res = String::new();
         unsafe { std::mem::swap(&mut koopa_text, &mut res); }
-        Driver::from(res).generate_program().unwrap()
+        Driver::from(res)
+            .generate_program()
+            .expect("Invalid Koopa text")
     }
 }
