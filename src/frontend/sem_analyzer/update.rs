@@ -49,8 +49,13 @@ impl Update<PrimaryExp> for SemAnalyzer {
             BracketedExp(bexp) => self.update(bexp.as_mut()),
             Number(_) => {}
             LVal(lval) => {
-                let value = self.sym_value(&lval.0);
-                *exp = Number(ast::Number(value));
+                let ident = &mut lval.0;
+                if self.is_const(ident) {
+                    let value = self.value(ident);
+                    *exp = Number(ast::Number(value));
+                } else {
+                    self.update(lval);
+                }
             }
         }
     }
@@ -72,3 +77,16 @@ impl_update_binary_op!(RelExp, Add, RelOpAdd, var);
 impl_update_binary_op!(EqExp, Rel, EqOpRel, var);
 impl_update_binary_op!(LAndExp, Eq, LAndEq, fixed);
 impl_update_binary_op!(LOrExp, LAnd, LOrLAnd, fixed);
+
+impl Update<InitVal> for SemAnalyzer {
+    fn update(&mut self, init_val: &mut InitVal) {
+        self.update(&mut init_val.0);
+    }
+}
+
+impl Update<LVal> for SemAnalyzer {
+    fn update(&mut self, lval: &mut LVal) {
+        let ident = &mut lval.0;
+        *ident = self.name(&ident[..]).to_string();
+    }
+}

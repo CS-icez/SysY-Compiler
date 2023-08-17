@@ -130,6 +130,6 @@ impl_eval_binary_op!(LOrExp, LAnd, LOrLAnd,
 
 impl Eval<LVal> for SemAnalyzer {
     fn eval(&self, lval: &LVal) -> i32 {
-        self.sym_value(&lval.0)
+        self.value(&lval.0)
     }
 }

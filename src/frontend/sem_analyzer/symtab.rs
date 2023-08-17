@@ -3,8 +3,8 @@ use Symbol::*;
 
 #[derive(Clone)]
 pub enum Symbol {
-    // Int { name: String },
-    ConstInt { name: String, value: i32 },
+    Int { token: String },
+    ConstInt { token: String, value: i32 },
 }
 
 #[derive(Default)]
@@ -24,23 +24,23 @@ impl SymTab {
         self.table.contains_key(name)
     }
 
-    pub fn symbol(&self, name: &str) -> &Symbol {
-        self.table.get(name).unwrap()
+    pub fn get(&self, name: &str) -> &Symbol {
+        self.table.get(name)
+            .expect(&format!("Symbol {name} not found"))
     }
 
-    pub fn value(&self, name: &str) -> i32 {
-        match self.symbol(name) {
-            ConstInt { value, .. } => *value,
-            #[allow(unreachable_patterns)]
-            _ => panic!("Get value of a non-const symbol"),
-        }
+    pub fn insert_int(&mut self, name: String) {
+        let token = format!("@{name}");
+        self.table.insert(
+            name,
+            Int { token },
+        );
     }
 
-    pub fn insert(&mut self, symbol: Symbol) {
-        match symbol {
-            ConstInt { ref name, .. } => {
-                self.table.insert(name.clone(), symbol);
-            }
-        }
+    pub fn insert_const_int(&mut self, name: String, value: i32) {
+        self.table.insert(
+            name.clone(),
+            ConstInt { token: name, value }
+        );
     }
 }

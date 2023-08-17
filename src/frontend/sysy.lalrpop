@@ -33,6 +33,7 @@ FuncType: FuncType = "int" => FuncType::Int;
 Block: Block = "{" <BlockItem*> "}" => Block(<>);
 
 Stmt: Stmt = {
+    <LVal> "=" <Exp> ";" => Stmt::Assign(<>),
     "return" <Exp> ";" => Stmt::Return(<>),
 };
 
@@ -130,7 +131,10 @@ LOrExp: LOrExp = {
     ),
 };
 
-Decl: Decl = <ConstDecl> => Decl::ConstDecl(<>);
+Decl: Decl = {
+    <ConstDecl> => Decl::ConstDecl(<>),
+    <VarDecl> => Decl::VarDecl(<>),
+};
 
 ConstDecl: ConstDecl = "const" <BType> <Comma<ConstDef>> ";" => ConstDecl(<>);
 
@@ -141,6 +145,15 @@ BType: BType = {
 ConstDef: ConstDef = <Ident> "=" <ConstInitVal> => ConstDef(<>);
 
 ConstInitVal: ConstInitVal = <ConstExp> => ConstInitVal(<>);
+
+VarDecl: VarDecl = <BType> <Comma<VarDef>> ";" => VarDecl(<>);
+
+VarDef: VarDef = {
+    <Ident> => VarDef::NoInit(<>),
+    <Ident> "=" <InitVal> => VarDef::Init(<>),
+};
+
+InitVal: InitVal = <Exp> => InitVal(<>);
 
 BlockItem: BlockItem = {
     <Decl> => BlockItem::Decl(<>),

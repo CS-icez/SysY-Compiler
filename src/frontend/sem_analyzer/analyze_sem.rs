@@ -41,6 +41,10 @@ impl Analyze<Stmt> for SemAnalyzer {
         use super::update::Update;
         use Stmt::*;
         match stmt {
+            Assign(lval, exp) => {
+                self.update(lval);
+                self.update(exp);
+            }
             Return(exp) => self.update(exp),
         }
     }
@@ -51,6 +55,7 @@ impl Analyze<Decl> for SemAnalyzer {
         use Decl::*;
         match decl {
             ConstDecl(const_decl) => self.analyze(const_decl),
+            VarDecl(var_decl) => self.analyze(var_decl),
         }
     }
 }
@@ -66,11 +71,35 @@ impl Analyze<ConstDecl> for SemAnalyzer {
 impl Analyze<ConstDef> for SemAnalyzer {
     fn analyze(&mut self, const_def: &mut ConstDef) {
         use super::eval::Eval;
-        use super::symtab::Symbol::*;
         let name = const_def.0.clone();
         let value = self.eval(&const_def.1);
-        let symbol = ConstInt { name, value };
-        self.insert_sym(symbol);
+        self.insert_const_int(name, value);
+    }
+}
+
+impl Analyze<VarDecl> for SemAnalyzer {
+    fn analyze(&mut self, var_decl: &mut VarDecl) {
+        for var_def in &mut var_decl.1 {
+            self.analyze(var_def);
+        }
+    }
+}
+
+impl Analyze<VarDef> for SemAnalyzer {
+    fn analyze(&mut self, var_def: &mut VarDef) {
+        use super::update::Update;
+        use VarDef::*;
+        match var_def {
+            NoInit(name) => {
+                self.insert_int(name.to_string());
+                *name = self.name(&name[..]).to_string();
+            }
+            Init(name, init_val) => {
+                self.insert_int(name.to_string());
+                self.update(init_val);
+                *name = self.name(&name[..]).to_string();
+            }
+        }
     }
 }
 

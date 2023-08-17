@@ -1,4 +1,4 @@
-use symtab::{Symbol, SymTab};
+use symtab::{Symbol::{self, *}, SymTab};
 use super::ast::*;
 use analyze_sem::Analyze;
 
@@ -24,16 +24,38 @@ impl SemAnalyzer {
         *self = Default::default();
     }
     
+    pub fn get(&self, name: &str) -> &Symbol {
+        self.symtab.get(name)
+    }
+
     #[allow(dead_code)]
-    pub fn symbol(&self, name: &str) -> &Symbol {
-        self.symtab.symbol(name)
+    pub fn name(&self, name: &str) -> &str {
+        match self.get(name) {
+            Int { token } => token,
+            ConstInt { token, .. } => token,
+        }
     }
 
-    pub fn sym_value(&self, name: &str) -> i32 {
-        self.symtab.value(name)
+    pub fn value(&self, name: &str) -> i32 {
+        match self.get(name) {
+            ConstInt { value, .. } => *value,
+            _ => panic!("Get value of non-const symbol {name}"),
+        }
     }
 
-    pub fn insert_sym(&mut self, symbol: Symbol) {
-        self.symtab.insert(symbol);
+    pub fn is_const(&self, name: &str) -> bool {
+        match self.get(name) {
+            ConstInt { .. } => true,
+            _ => false,
+        }
     }
+    
+    pub fn insert_int(&mut self, name: String) {
+        self.symtab.insert_int(name);
+    }
+    
+    pub fn insert_const_int(&mut self, name: String, value: i32) {
+        self.symtab.insert_const_int(name, value);
+    }
+
 }

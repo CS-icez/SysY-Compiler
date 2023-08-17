@@ -17,8 +17,10 @@ pub enum FuncType {
 /// Block ::= "{" {BlockItem} "}"
 pub struct Block(pub Vec<BlockItem>);
 
-/// Stmt ::= "return" Exp ";"
+/// Stmt ::= LVal "=" Exp ";"
+///     | "return" Exp ";"
 pub enum Stmt {
+    Assign(LVal, Exp),
     Return(Exp),
 }
 
@@ -102,9 +104,10 @@ pub enum LOrExp {
     LOrLAnd(Box<LOrExp>, Box<LAndExp>),
 }
 
-/// Decl ::= ConstDecl
+/// Decl ::= ConstDecl | VarDecl
 pub enum Decl {
     ConstDecl(ConstDecl),
+    VarDecl(VarDecl),
 }
 
 /// ConstDecl ::= "const" BType ConstDef {"," ConstDef} ";"
@@ -120,6 +123,18 @@ pub struct ConstDef(pub String, pub ConstInitVal);
 
 /// ConstInitVal ::= ConstExp
 pub struct ConstInitVal(pub ConstExp);
+
+/// VarDecl ::= BType VarDef {"," VarDef} ";"
+pub struct VarDecl(pub BType, pub Vec<VarDef>);
+
+/// VarDef ::= IDENT | IDENT "=" InitVal
+pub enum VarDef {
+    NoInit(String),
+    Init(String, InitVal),
+}
+
+/// InitVal ::= Exp
+pub struct InitVal(pub Exp);
 
 
 /// BlockItem ::= Decl | Stmt
