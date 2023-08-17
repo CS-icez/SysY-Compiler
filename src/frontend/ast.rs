@@ -1,48 +1,44 @@
+/// Program ::= CompUnit {CompUnit}
+pub struct Program(pub Vec<CompUnit>);
+
 /// CompUnit ::= FuncDef
-pub type CompUnit = FuncDef;
+pub enum CompUnit {
+    FuncDef(FuncDef),
+}
 
 /// FuncDef ::= FuncType IDENT "(" ")" Block
-pub struct FuncDef {
-    pub func_type: FuncType,
-    pub ident: String,
-    pub block: Block,
-}
+pub struct FuncDef(pub FuncType, pub String, pub Block);
 
 /// FuncType ::= "int"
 pub enum FuncType {
     Int,
 }
 
-/// Block ::= "{" Stmt "}"
-pub struct Block {
-    pub stmt: Stmt,
-}
+/// Block ::= "{" {BlockItem} "}"
+pub struct Block(pub Vec<BlockItem>);
 
 /// Stmt ::= "return" Exp ";"
-pub struct Stmt {
-    pub exp: Exp,
+pub enum Stmt {
+    Return(Exp),
 }
 
 /// Number ::= INT_CONST
-pub struct Number {
-    pub int_const: i32,
-}
+pub struct Number(pub i32);
 
-/// Exp ::= AddExp
-pub struct Exp {
-    pub add_exp: LOrExp,
-}
+/// Exp ::= LOrExp
+pub struct Exp(pub LOrExp);
 
-/// PrimaryExp ::= "(" Exp ")" | Number
+/// PrimaryExp ::= "(" Exp ")" | Number | LVal
 pub enum PrimaryExp {
-    BracketedExp { bexp: Box<Exp> },
-    Num { number: Number },
+    BracketedExp(Box<Exp>),
+    Number(Number),
+    LVal(LVal),
 }
 
 /// UnaryExp ::= PrimaryExp | UnaryOp UnaryExp;
 pub enum UnaryExp {
-    Primary { primary_bexp: Box<PrimaryExp> },
-    OpUnary { op: UnaryOp, unary_bexp: Box<UnaryExp> },
+    Primary(Box<PrimaryExp>),
+    OpUnary(UnaryOp, Box<UnaryExp>),
 }
 
 /// UnaryOp ::= "+" | "-" | "!"
@@ -52,8 +48,8 @@ pub enum UnaryOp {
 
 /// MulExp ::= UnaryExp | MulExp MulOp UnaryExp
 pub enum MulExp {
-    Unary { unary_bexp: Box<UnaryExp> },
-    MulOpUnary { bexp: Box<MulExp>, op: MulOp, unary_bexp: Box<UnaryExp> },
+    Unary(Box<UnaryExp>),
+    MulOpUnary(Box<MulExp>, MulOp, Box<UnaryExp>),
 }
 
 /// MulOp ::= "*" | "/" | "%"
@@ -63,8 +59,8 @@ pub enum MulOp {
 
 /// AddExp ::= MulExp | AddExp AddOp MulExp
 pub enum AddExp {
-    Mul { mul_bexp: Box<MulExp> },
-    AddOpMul { bexp: Box<AddExp>, op: AddOp, mul_bexp: Box<MulExp> },
+    Mul(Box<MulExp>),
+    AddOpMul(Box<AddExp>, AddOp, Box<MulExp>),
 }
 
 /// AddOp ::= "+" | "-"
@@ -74,8 +70,8 @@ pub enum AddOp {
 
 /// RelExp ::= AddExp | RelExp RelOp AddExp
 pub enum RelExp {
-    Add { add_bexp: Box<AddExp> },
-    RelOpAdd { bexp: Box<RelExp>, op: RelOp, add_bexp: Box<AddExp> },
+    Add(Box<AddExp>),
+    RelOpAdd(Box<RelExp>, RelOp, Box<AddExp>),
 }
 
 /// RelOp ::= "<=" | "<" | ">=" | ">"
@@ -85,8 +81,8 @@ pub enum RelOp {
 
 /// EqExp ::= RelExp | EqExp EqOp RelExp
 pub enum EqExp {
-    Rel { rel_bexp: Box<RelExp> },
-    EqOpRel { bexp: Box<EqExp>, op: EqOp, rel_bexp: Box<RelExp> },
+    Rel(Box<RelExp>),
+    EqOpRel(Box<EqExp>, EqOp, Box<RelExp>),
 }
 
 /// EqOp ::= "==" | "!="
@@ -96,12 +92,44 @@ pub enum EqOp {
 
 /// LAndExp ::= EqExp | LAndExp "&&" EqExp
 pub enum LAndExp {
-    Eq { eq_bexp: Box<EqExp> },
-    LAndEq { bexp: Box<LAndExp>, eq_bexp: Box<EqExp> },
+    Eq(Box<EqExp>),
+    LAndEq(Box<LAndExp>, Box<EqExp>),
 }
 
 /// LOrExp ::= LAndExp | LOrExp "||" LAndExp
 pub enum LOrExp {
-    LAnd { land_bexp: Box<LAndExp> },
-    LOrLAnd { bexp: Box<LOrExp>, land_bexp: Box<LAndExp> },
+    LAnd(Box<LAndExp>),
+    LOrLAnd(Box<LOrExp>, Box<LAndExp>),
 }
+
+/// Decl ::= ConstDecl
+pub enum Decl {
+    ConstDecl(ConstDecl),
+}
+
+/// ConstDecl ::= "const" BType ConstDef {"," ConstDef} ";"
+pub struct ConstDecl(pub BType, pub Vec<ConstDef>);
+
+/// BType ::= "int"
+pub enum BType {
+    Int,
+}
+
+/// ConstDef ::= IDENT "=" ConstInitVal
+pub struct ConstDef(pub String, pub ConstInitVal);
+
+/// ConstInitVal ::= ConstExp
+pub struct ConstInitVal(pub ConstExp);
+
+
+/// BlockItem ::= Decl | Stmt
+pub enum BlockItem {
+    Decl(Decl),
+    Stmt(Stmt),
+}
+
+/// LVal ::= IDENT
+pub struct LVal(pub String);
+
+/// ConstExp ::= Exp
+pub struct ConstExp(pub Exp);

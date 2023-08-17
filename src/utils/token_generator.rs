@@ -1,4 +1,6 @@
 use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
+
+#[derive(Default)]
 pub struct TokenGenerator {
     prefix: String,
     counter: AtomicU32,
@@ -22,9 +24,9 @@ impl TokenGenerator {
         self.prefix.to_string() + &cur.to_string()
     }
 
-    pub fn roll_back(&self) {
-        let cur = self.counter.load(Relaxed);
-        assert_ne!(cur, 0);
-        self.counter.store(cur - 1, Relaxed);
-    }
+    // pub fn roll_back(&self) {
+    //     let cur = self.counter.load(Relaxed);
+    //     assert_ne!(cur, 0);
+    //     self.counter.store(cur - 1, Relaxed);
+    // }
 }

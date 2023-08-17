@@ -9,23 +9,34 @@ match {
     _
 }
 
-pub CompUnit: CompUnit = {
-    FuncDef => <>,
-};
-
-FuncDef: FuncDef = {
-    <func_type: FuncType> <ident: Ident> "(" ")" <block: Block> => {
-        FuncDef { <> }
+// http://lalrpop.github.io/lalrpop/tutorial/006_macros.html
+Comma<T>: Vec<T> = {
+    <mut v:(<T> ",")*> <e:T?> => match e {
+        None => v,
+        Some(e) => {
+            v.push(e);
+            v
+        }
     }
 };
 
+pub Program: Program = <CompUnit*> => Program(<>);
+
+CompUnit: CompUnit = {
+    <FuncDef> => CompUnit::FuncDef(<>),
+};
+
+FuncDef: FuncDef = <FuncType> <Ident> "(" ")" <Block> => FuncDef(<>);
+
 FuncType: FuncType = "int" => FuncType::Int;
 
-Block: Block = "{" <stmt: Stmt> "}" => Block { <> };
+Block: Block = "{" <BlockItem*> "}" => Block(<>);
 
-Stmt: Stmt = "return" <exp: Exp> ";" => Stmt { <> };
+Stmt: Stmt = {
+    "return" <Exp> ";" => Stmt::Return(<>),
+};
 
-Number: Number = <int_const: IntConst> => Number { <> };
+Number: Number = <IntConst> => Number(<>);
 
 Ident: String = r"[_a-zA-Z][_a-zA-Z0-9]*" => <>.to_string();
 
@@ -35,19 +46,17 @@ IntConst: i32 = {
     r"0[xX][0-9a-fA-F]+" => i32::from_str_radix(&<>[2..], 16).unwrap(),
 }
 
-Exp: Exp = <add_exp: LOrExp> => Exp { <> };
+Exp: Exp = <LOrExp> => Exp(<>);
 
 PrimaryExp: PrimaryExp = {
-    "(" <exp: Exp> ")" => PrimaryExp::BracketedExp { bexp: Box::new(exp) },
-    <number: Number> => PrimaryExp::Num { <> },
+    "(" <exp: Exp> ")" => PrimaryExp::BracketedExp(Box::new(exp)),
+    <Number> => PrimaryExp::Number(<>),
+    <LVal> => PrimaryExp::LVal(<>),
 };
 
 UnaryExp: UnaryExp = {
-    <exp: PrimaryExp> => UnaryExp::Primary { primary_bexp: Box::new(exp) },
-    <op: UnaryOp> <exp: UnaryExp> => UnaryExp::OpUnary {
-        op,
-        unary_bexp: Box::new(exp),
-    }
+    <exp: PrimaryExp> => UnaryExp::Primary(Box::new(exp)),
+    <op: UnaryOp> <exp: UnaryExp> => UnaryExp::OpUnary(op, Box::new(exp)),
 };
 
 UnaryOp: UnaryOp = {
@@ -57,12 +66,10 @@ UnaryOp: UnaryOp = {
 };
 
 MulExp: MulExp = {
-    <exp: UnaryExp> => MulExp::Unary { unary_bexp: Box::new(exp) },
-    <exp: MulExp> <op: MulOp> <unary: UnaryExp> => MulExp::MulOpUnary {
-        bexp: Box::new(exp),
-        op,
-        unary_bexp: Box::new(unary),
-    }
+    <exp: UnaryExp> => MulExp::Unary(Box::new(exp)),
+    <exp: MulExp> <op: MulOp> <unary: UnaryExp> => MulExp::MulOpUnary(
+        Box::new(exp), op, Box::new(unary),
+    ),
 };
 
 MulOp: MulOp = {
@@ -72,12 +79,10 @@ MulOp: MulOp = {
 };
 
 AddExp: AddExp = {
-    <exp: MulExp> => AddExp::Mul { mul_bexp: Box::new(exp) },
-    <exp: AddExp> <op: AddOp> <mul: MulExp> => AddExp::AddOpMul {
-        bexp: Box::new(exp),
-        op,
-        mul_bexp: Box::new(mul),
-    }
+    <exp: MulExp> => AddExp::Mul(Box::new(exp)),
+    <exp: AddExp> <op: AddOp> <mul: MulExp> => AddExp::AddOpMul(
+        Box::new(exp), op, Box::new(mul),
+    ),
 }
 
 AddOp: AddOp = {
@@ -86,12 +91,10 @@ AddOp: AddOp = {
 };
 
 RelExp: RelExp = {
-    <exp: AddExp> => RelExp::Add { add_bexp: Box::new(exp) },
-    <exp: RelExp> <op: RelOp> <add: AddExp> => RelExp::RelOpAdd {
-        bexp: Box::new(exp),
-        op,
-        add_bexp: Box::new(add),
-    }
+    <exp: AddExp> => RelExp::Add(Box::new(exp)),
+    <exp: RelExp> <op: RelOp> <add: AddExp> => RelExp::RelOpAdd(
+        Box::new(exp), op, Box::new(add),
+    ),
 };
 
 RelOp: RelOp = {
@@ -102,12 +105,10 @@ RelOp: RelOp = {
 };
 
 EqExp: EqExp = {
-    <exp: RelExp> => EqExp::Rel { rel_bexp: Box::new(exp) },
-    <exp: EqExp> <op: EqOp> <rel: RelExp> => EqExp::EqOpRel {
-        bexp: Box::new(exp),
-        op,
-        rel_bexp: Box::new(rel),
-    }
+    <exp: RelExp> => EqExp::Rel(Box::new(exp)),
+    <exp: EqExp> <op: EqOp> <rel: RelExp> => EqExp::EqOpRel(
+        Box::new(exp), op, Box::new(rel),
+    ),
 };
 
 EqOp: EqOp = {
@@ -116,17 +117,36 @@ EqOp: EqOp = {
 };
 
 LAndExp: LAndExp = {
-    <exp: EqExp> => LAndExp::Eq { eq_bexp: Box::new(exp) },
-    <exp: LAndExp> "&&" <eq: EqExp> => LAndExp::LAndEq {
-        bexp: Box::new(exp),
-        eq_bexp: Box::new(eq),
-    }
+    <exp: EqExp> => LAndExp::Eq(Box::new(exp)),
+    <exp: LAndExp> "&&" <eq: EqExp> => LAndExp::LAndEq(
+        Box::new(exp), Box::new(eq),
+    ),
 };
 
 LOrExp: LOrExp = {
-    <exp: LAndExp> => LOrExp::LAnd { land_bexp: Box::new(exp) },
-    <exp: LOrExp> "||" <land: LAndExp> => LOrExp::LOrLAnd {
-        bexp: Box::new(exp),
-        land_bexp: Box::new(land),
-    }
+    <exp: LAndExp> => LOrExp::LAnd(Box::new(exp)),
+    <exp: LOrExp> "||" <land: LAndExp> => LOrExp::LOrLAnd(
+        Box::new(exp), Box::new(land),
+    ),
 };
+
+Decl: Decl = <ConstDecl> => Decl::ConstDecl(<>);
+
+ConstDecl: ConstDecl = "const" <BType> <Comma<ConstDef>> ";" => ConstDecl(<>);
+
+BType: BType = {
+    "int" => BType::Int,
+}
+
+ConstDef: ConstDef = <Ident> "=" <ConstInitVal> => ConstDef(<>);
+
+ConstInitVal: ConstInitVal = <ConstExp> => ConstInitVal(<>);
+
+BlockItem: BlockItem = {
+    <Decl> => BlockItem::Decl(<>),
+    <Stmt> => BlockItem::Stmt(<>),
+};
+
+LVal: LVal = <Ident> => LVal(<>);
+
+ConstExp: ConstExp = <Exp> => ConstExp(<>);

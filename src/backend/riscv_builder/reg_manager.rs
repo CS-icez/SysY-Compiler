@@ -87,3 +87,9 @@ impl RegManager {
         }
     }
 }
+
+impl Default for RegManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}

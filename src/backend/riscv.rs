@@ -2,28 +2,29 @@ use std::collections::LinkedList;
 
 pub type Reg = String;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Program {
     pub global_decls: LinkedList<GlobalDecl>,
     pub funcs: LinkedList<Func>,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct GlobalDecl;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Func {
     pub name: String,
     pub blocks: LinkedList<Block>,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Block {
-    pub name: Option<String>,
+    pub name: String,
     pub insts: LinkedList<Inst>,
 }
 
 #[allow(dead_code)]
+#[derive(Clone)]
 pub enum Inst {
     Beqz { rs: Reg, label: String },
     Bnez { rs: Reg, label: String },
@@ -62,36 +63,5 @@ impl Program {
             global_decls: LinkedList::new(),
             funcs: LinkedList::new(),
         }
-    }
-
-    fn back_func_mut(&mut self) -> &mut Func {
-        self.funcs.back_mut().unwrap()
-    }
-
-    fn back_block_mut(&mut self) -> &mut Block {
-        self.back_func_mut().blocks.back_mut().unwrap()
-    }
-
-    pub fn push_func(&mut self, name: &str) {
-        self.funcs.push_back(Func {
-            name: name.to_string(),
-            ..Default::default()
-        });
-    }
-
-    pub fn push_block(&mut self, name: Option<&str>) {
-        let name = if let Some(name) = name {
-            Some(name.to_string())
-        } else {
-            None
-        };
-        self.back_func_mut().blocks.push_back(Block {
-            name,
-            ..Default::default()
-        });
-    }
-
-    pub fn push_inst(&mut self, inst: Inst) {
-        self.back_block_mut().insts.push_back(inst);
     }
 }

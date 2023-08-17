@@ -1,14 +1,22 @@
-pub use ast::CompUnit;
+pub use ast::Program;
+use parser::ProgramParser;
+use sem_analyzer::SemAnalyzer;
 
 pub mod ast;
+mod sem_analyzer;
 
 lalrpop_util::lalrpop_mod!(parser, "/frontend/sysy.rs");
 
-impl From<&str> for CompUnit {
-    fn from(prog: &str) -> CompUnit {
-        parser::CompUnitParser::new()
+impl Program {
+    pub fn from_c_text(prog: &str) -> Self {
+        ProgramParser::new()
             .parse(&prog)
             .expect("Parse error")
+            .analyze_sem()
+    }
+
+    fn analyze_sem(mut self) -> Self {
+        SemAnalyzer::new().run(&mut self);
+        self
     }
 }
-
