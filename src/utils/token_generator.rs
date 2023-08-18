@@ -24,6 +24,11 @@ impl TokenGenerator {
         self.prefix.to_string() + &cur.to_string()
     }
 
+    pub fn peek(&self) -> String {
+        let cur = self.counter.load(Relaxed);
+        self.prefix.to_string() + &cur.to_string()
+    }
+
     // pub fn roll_back(&self) {
     //     let cur = self.counter.load(Relaxed);
     //     assert_ne!(cur, 0);

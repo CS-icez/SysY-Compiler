@@ -21,6 +21,9 @@ pub struct Block(pub Vec<BlockItem>);
 ///     | [Exp] ";"
 ///     | Block
 ///     | "if" "(" Exp ")" Stmt ["else" Stmt]
+///     | "while" "(" Exp ")" Stmt
+///     | "break" ";"
+///     | "continue" ";"
 ///     | "return" Exp ";"
 pub enum Stmt {
     Assign(LVal, Exp),
@@ -28,6 +31,9 @@ pub enum Stmt {
     Exp(Exp),
     Block(Block),
     If(Exp, Box<Stmt>, Option<Box<Stmt>>),
+    While(Exp, Box<Stmt>),
+    Break,
+    Continue,
     Return(Exp),
 }
 

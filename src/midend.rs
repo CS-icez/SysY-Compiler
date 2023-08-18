@@ -1,3 +1,4 @@
+use::std::collections::{VecDeque, HashMap};
 use koopa::front::Driver;
 use koopa::ir::entities;
 use crate::frontend::ast;
@@ -8,15 +9,18 @@ use build_from::BuildFrom;
 mod build_from;
 mod post_process;
 
+struct LoopMeta {
+    cond_label: String,
+    #[allow(dead_code)]
+    body_label: String,
+    end_label: String,
+}
+
 #[derive(Default)]
 struct KoopaTextBuilder {
     text: String,
-    temp_gen: TokenGenerator,
-    name_gen: TokenGenerator,
-    then_label_gen: TokenGenerator,
-    else_label_gen: TokenGenerator,
-    endif_label_gen: TokenGenerator,
-    ret_label_gen: TokenGenerator,
+    loop_meta: VecDeque<LoopMeta>,
+    token_gen: HashMap<&'static str, TokenGenerator>,
 }
 
 impl KoopaTextBuilder {
@@ -25,12 +29,8 @@ impl KoopaTextBuilder {
     pub fn new() -> Self {
         Self {
             text: String::new(),
-            temp_gen: TokenGenerator::new("%"),
-            name_gen: TokenGenerator::new("@if_"),
-            then_label_gen: TokenGenerator::new("%then_"),
-            else_label_gen: TokenGenerator::new("%else_"),
-            endif_label_gen: TokenGenerator::new("%endif_"),
-            ret_label_gen: TokenGenerator::new("%ret_"),
+            loop_meta: VecDeque::new(),
+            token_gen: HashMap::new(),
         }
     }
 
@@ -42,35 +42,53 @@ impl KoopaTextBuilder {
         res
     }
 
-    fn make_temp(&self) -> String {
-        self.temp_gen.generate()
+    fn enter_loop(&mut self) {
+        let cond_label = self.peek_token("%cond_");
+        let body_label = self.peek_token("%body_");
+        let end_label = self.peek_token("%endwhile_");
+        self.loop_meta.push_back(LoopMeta {
+            cond_label, body_label, end_label,
+        });
     }
 
-    fn make_name(&self) -> String {
-        self.name_gen.generate()
+    fn exit_loop(&mut self) {
+        self.loop_meta.pop_back();
     }
 
-    fn make_then_label(&self) -> String {
-        self.then_label_gen.generate()
+    fn cur_cond_label(&self) -> &String {
+        &self.loop_meta.back().unwrap().cond_label
     }
 
-    fn make_else_label(&self) -> String {
-        self.else_label_gen.generate()
+    fn cur_end_label(&self) -> &String {
+        &self.loop_meta.back().unwrap().end_label
     }
 
-    fn make_endif_label(&self) -> String {
-        self.endif_label_gen.generate()
+    fn make_token(&mut self, name: &'static str) -> String {
+        let gen = self.token_gen.entry(name)
+            .or_insert_with(|| TokenGenerator::new(name));
+        gen.generate()
     }
 
-    fn make_ret_label(&self) -> String {
-        self.ret_label_gen.generate()
+    fn peek_token(&mut self, name: &'static str) -> String {
+        let gen = self.token_gen.entry(name)
+            .or_insert_with(|| TokenGenerator::new(name));
+        gen.peek()
+    }
+
+    fn make_num(&mut self) -> String {
+        self.make_token("%")
+    }
+
+    fn make_tmp(&mut self) -> String {
+        self.make_token("%tmp")
+    }
+
+    fn make_koopa(&mut self) -> String {
+        self.make_token("%koopa_")
     }
 
     fn reset_labels(&mut self) {
-        self.temp_gen.reset();
-        self.then_label_gen.reset();
-        self.else_label_gen.reset();
-        self.endif_label_gen.reset();
+        self.token_gen.clear();
     }
 }
 

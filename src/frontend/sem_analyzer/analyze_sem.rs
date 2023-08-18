@@ -57,6 +57,12 @@ impl Analyze<Stmt> for SemAnalyzer {
                     self.analyze(stmt.as_mut());
                 }
             }
+            While(exp, stmt) => {
+                self.update(exp);
+                self.analyze(stmt.as_mut());
+            }
+            Break => {}
+            Continue => {}
             Return(exp) => self.update(exp),
         }
     }
