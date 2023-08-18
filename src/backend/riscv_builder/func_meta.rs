@@ -46,10 +46,3 @@ impl From<&entities::FunctionData> for FuncMeta {
         res
     }
 }
-
-// pub fn load_value(
-//     src: &entities::ValueData,
-//     dfg: &DataFlowGraph,
-// ) -> String {
-//     "".to_string()
-// }

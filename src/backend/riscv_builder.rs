@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use koopa::ir::entities;
 use reg_manager::RegManager;
 use func_meta::FuncMeta;
-use super::riscv;
+use super::riscv::{self, Reg};
 use crate::utils::token_generator::TokenGenerator;
 
 mod build;
@@ -16,7 +16,7 @@ pub struct RiscvBuilder {
     reg_mgr: RegManager,
     token_gen: TokenGenerator,
     func_meta: FuncMeta,
-    inst2reg: HashMap<entities::Value, String>,
+    inst2reg: HashMap<entities::Value, Reg>,
 }
 
 impl RiscvBuilder {
@@ -42,26 +42,25 @@ impl RiscvBuilder {
         self.token_gen.generate()
     }
 
-    fn alloc_reg(&mut self, inst: entities::Value, reg: Option<String>) -> String {
+    fn alloc_reg(&mut self, inst: entities::Value, reg: Option<Reg>) -> Reg {
         let reg = self.reg_mgr.alloc(reg);
-        self.inst2reg.insert(inst, reg.clone());
+        self.inst2reg.insert(inst, reg);
         reg
     }
 
-    fn query_inst(&self, inst: entities::Value) -> String {
+    fn query_inst(&self, inst: entities::Value) -> Reg {
         self.inst2reg.get(&inst)
             .expect("Instruction not allocated to register")
-            .clone()
     }
 
     #[allow(dead_code)]
     fn replace_reg_owner(&mut self, old_inst: entities::Value, new_inst: entities::Value) {
-        let reg = self.inst2reg.get(&old_inst).unwrap().clone();
+        let reg = *self.inst2reg.get(&old_inst).unwrap();
         self.inst2reg.remove(&old_inst);
         self.inst2reg.insert(new_inst, reg);
     }
 
-    fn free_reg(&mut self, inst: entities::Value, reg: &str) {
+    fn free_reg(&mut self, inst: entities::Value, reg: Reg) {
         self.reg_mgr.free(reg);
         self.inst2reg.remove(&inst);
     }

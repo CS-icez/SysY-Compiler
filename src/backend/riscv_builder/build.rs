@@ -1,28 +1,23 @@
 use koopa::ir::entities;
 use koopa::ir::layout;
 use koopa::ir::dfg::DataFlowGraph;
-use crate::backend::riscv::Inst;
+use crate::backend::riscv::{Inst, Reg};
 use super::RiscvBuilder;
 
 macro_rules! push_inst {
     ($self:tt, Inst::$T:ident, Binary, $rd:expr, $rhs:expr, $lhs:expr) => {
         $self.push_inst(Inst::$T {
-            rd: $rd.clone(),
-            rs1: $lhs.clone(),
-            rs2: $rhs.clone(),
+            rd: $rd, rs1: $lhs, rs2: $rhs,
         })
     };
     ($self:tt, Inst::$T:ident, BinaryImm, $rd:expr, $rs:expr, $imm12:literal) => {
         $self.push_inst(Inst::$T {
-            rd: $rd.clone(),
-            rs: $rs.clone(),
-            imm12: $imm12,
+            rd: $rd, rs: $rs, imm12: $imm12,
         })
     };
     ($self:tt, Inst::$T:ident, Unary, $rd:expr, $rs:expr) => {
         $self.push_inst(Inst::$T {
-            rd: $rd.clone(),
-            rs: $rs.clone(),
+            rd: $rd, rs: $rs,
         })
     };
 }
@@ -77,8 +72,8 @@ impl RiscvBuilder {
         &mut self,
         value: entities::Value,
         dfg: &DataFlowGraph,
-        dst: Option<String>,
-    ) -> Option<String> {
+        dst: Option<Reg>,
+    ) -> Option<Reg> {
         use entities::ValueKind::*;
         use koopa::ir::BinaryOp::*;
 
@@ -86,10 +81,10 @@ impl RiscvBuilder {
         match value_data.kind() {
             Integer(int) => {
                 if dst == None && int.value() == 0 {
-                    return Some("x0".to_string());
+                    return Some("x0");
                 }
-                let rd = self.alloc_reg(value, dst.clone());
-                let item = Inst::Li { rd: rd.clone(), imm: int.value() };
+                let rd = self.alloc_reg(value, dst);
+                let item = Inst::Li { rd, imm: int.value() };
                 self.push_inst(item);
                 Some(rd)
             }
@@ -99,7 +94,7 @@ impl RiscvBuilder {
             }
 
             Load(load) => {
-                let rd = self.alloc_reg(value, dst.clone());
+                let rd = self.alloc_reg(value, dst);
                 let ident = dfg.value(load.src()).name().as_ref().unwrap();
                 let imm = self.offset(ident) as i32;
                 self.build_lw(&rd, imm, "sp");
@@ -118,7 +113,7 @@ impl RiscvBuilder {
                 // println!("call build_inst: {binary:#?}");
                 let lhs = self.query_or_build(binary.lhs(), dfg);
                 let rhs = self.query_or_build(binary.rhs(), dfg);
-                let rd = self.alloc_reg(value, dst.clone());
+                let rd = self.alloc_reg(value, dst);
                 match binary.op() {
                     NotEq => {
                         if lhs != "x0" {
@@ -163,14 +158,11 @@ impl RiscvBuilder {
 
             Return(ret) => {
                 if let Some(value) = ret.value() {
-                    let a0 = "a0".to_string();
+                    let a0 = "a0";
                     // assert!(dst == None || dst.as_ref().unwrap() == &a0);
                     let rs = self.query_or_build(value, dfg);
                     if rs != a0 {
-                        self.push_inst(Inst::Mv {
-                            rd: a0.clone(),
-                            rs: rs.clone(),
-                        });
+                        self.push_inst(Inst::Mv { rd: a0, rs  });
                     }
                 }
                 self.build_addi("sp", "sp", self.frame_size() as i32);

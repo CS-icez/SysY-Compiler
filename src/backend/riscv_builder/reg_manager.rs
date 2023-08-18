@@ -1,18 +1,20 @@
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
+use super::riscv::Reg;
+
 pub struct RegManager {
     bitmap: [AtomicBool; Self::REG_NUM],
 }
 
 impl RegManager {
     const REG_NUM: usize = 32;
-    const REG_NAME: [&str; Self::REG_NUM] = [
+    const REG_NAME: [Reg; Self::REG_NUM] = [
         "x0", "ra", "sp", "gp", "tp", "t0", "t1", "t2",
         "fp", "s1", "a0", "a1", "a2", "a3", "a4", "a5",
         "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7",
         "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6",
     ];
 
-    fn reg2num(reg: &str) -> usize {
+    fn reg2num(reg: Reg) -> usize {
         match reg {
             "x0" => 0, "ra" => 1, "sp" => 2,
             "gp" => 3, "tp" => 4, "t0" => 5,
@@ -44,7 +46,7 @@ impl RegManager {
         RegManager { bitmap }
     }
 
-    pub fn alloc(&self, reg: Option<String>) -> String {
+    pub fn alloc(&self, reg: Option<Reg>) -> Reg {
         if let Some(reg) = reg {
             // println!("alloc: {reg}");
             let bit = &self.bitmap[Self::reg2num(&reg)];
@@ -57,14 +59,14 @@ impl RegManager {
                 if bit.load(Relaxed) == false {
                     bit.store(true, Relaxed);
                     // println!("alloc: {}", Self::REG_NAME[i]);
-                    return Self::REG_NAME[i].to_string();
+                    return Self::REG_NAME[i];
                 }
             }
             panic!("All registers allocated!");
         }
     }
 
-    pub fn free(&self, reg: &str) {
+    pub fn free(&self, reg: Reg) {
         // println!("free: {reg}");
         if reg == "x0" {
             return;

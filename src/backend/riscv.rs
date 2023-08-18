@@ -1,6 +1,6 @@
 use std::collections::LinkedList;
 
-pub type Reg = String;
+pub type Reg = &'static str;
 
 #[derive(Default, Clone)]
 pub struct Program {
