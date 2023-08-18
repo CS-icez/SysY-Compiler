@@ -50,6 +50,13 @@ impl Analyze<Stmt> for SemAnalyzer {
             Empty => {}
             Exp(exp) => self.update(exp),
             Block(block) => self.analyze(block),
+            If(exp, stmt, opt_stmt) => {
+                self.update(exp);
+                self.analyze(stmt.as_mut());
+                if let Some(stmt) = opt_stmt {
+                    self.analyze(stmt.as_mut());
+                }
+            }
             Return(exp) => self.update(exp),
         }
     }

@@ -37,6 +37,21 @@ Stmt: Stmt = {
     ";" => Stmt::Empty,
     <Exp> ";" => Stmt::Exp(<>),
     <Block> => Stmt::Block(<>),
+    "if" "(" <exp: Exp> ")" <stmt: Stmt> => Stmt::If(exp, Box::new(stmt), None),
+    "if" "(" <exp: Exp> ")" <stmt: ClosedStmt> "else" <else_stmt: Stmt> => Stmt::If(
+        exp, Box::new(stmt), Some(Box::new(else_stmt)),
+    ),
+    "return" <Exp> ";" => Stmt::Return(<>),
+};
+
+ClosedStmt: Stmt = {
+    <LVal> "=" <Exp> ";" => Stmt::Assign(<>),
+    ";" => Stmt::Empty,
+    <Exp> ";" => Stmt::Exp(<>),
+    <Block> => Stmt::Block(<>),
+    "if" "(" <exp: Exp> ")" <stmt: ClosedStmt> "else" <else_stmt: ClosedStmt> => Stmt::If(
+        exp, Box::new(stmt), Some(Box::new(else_stmt)),
+    ),
     "return" <Exp> ";" => Stmt::Return(<>),
 };
 

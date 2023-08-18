@@ -40,19 +40,16 @@ impl RiscvBuilder {
 
         let bbs = func.layout().bbs();
         let mut entry = true;
-        for (_, node) in bbs {
-            let temp;
-            let name = if entry {
-                func_name
-            } else {
-                temp = self.make_token();
-                &temp
-            };
-            self.push_block(name);
+        for (&bb, node) in bbs {
             if entry {
+                let name = func.name();
+                self.push_block(&name[1..]);
                 self.build_addi("sp", "sp", -size);
+                entry = false;
+            } else {
+                let name = func.dfg().bb(bb).name().as_ref().unwrap();
+                self.push_block(&name[1..]);
             }
-            entry = false;
             self.build_block(node, func.dfg());
         }
     }
@@ -77,7 +74,9 @@ impl RiscvBuilder {
         use entities::ValueKind::*;
         use koopa::ir::BinaryOp::*;
 
+        // println!("build_inst: {value:?}");
         let value_data = dfg.value(value);
+        // println!("{value_data:#?}");
         match value_data.kind() {
             Integer(int) => {
                 if dst == None && int.value() == 0 {
@@ -106,7 +105,7 @@ impl RiscvBuilder {
                 let ident = dfg.value(store.dest()).name().as_ref().unwrap();
                 let imm = self.offset(ident) as i32;
                 self.build_sw(&rs, imm, "sp");
-                self.free_reg(store.dest(), rs);
+                self.free_reg(store.value());
                 None
             }
 
@@ -152,9 +151,36 @@ impl RiscvBuilder {
                     Xor => push_inst!(self, Inst::Xor, Binary, rd, rhs, lhs),
                     _ => unreachable!()
                 }
-                self.free_reg(binary.lhs(), &lhs);
-                self.free_reg(binary.rhs(), &rhs);
+                self.free_reg(binary.lhs());
+                self.free_reg(binary.rhs());
                 Some(rhs)
+            }
+
+            Branch(branch) => {
+                let cond = self.query_or_build(branch.cond(), dfg);
+                let get_name = |bb| {
+                    let name = dfg.bb(bb).name().as_ref().unwrap();
+                    name[1..].to_string()
+                };
+                let true_bb_name = get_name(branch.true_bb());
+                let false_bb_name = get_name(branch.false_bb());
+                self.push_inst(Inst::Beqz {
+                    rs: cond,
+                    label: false_bb_name,
+                });
+                self.push_inst(Inst::J {
+                    label: true_bb_name,
+                });
+                self.free_reg(branch.cond());
+                None
+            }
+
+            Jump(jump) => {
+                let name = dfg.bb(jump.target()).name().as_ref().unwrap();
+                self.push_inst(Inst::J {
+                    label: name[1..].to_string(),
+                });
+                None
             }
 
             Return(ret) => {

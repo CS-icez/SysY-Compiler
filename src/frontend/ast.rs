@@ -20,12 +20,14 @@ pub struct Block(pub Vec<BlockItem>);
 /// Stmt ::= LVal "=" Exp ";"
 ///     | [Exp] ";"
 ///     | Block
+///     | "if" "(" Exp ")" Stmt ["else" Stmt]
 ///     | "return" Exp ";"
 pub enum Stmt {
     Assign(LVal, Exp),
     Empty,
     Exp(Exp),
     Block(Block),
+    If(Exp, Box<Stmt>, Option<Box<Stmt>>),
     Return(Exp),
 }
 

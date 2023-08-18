@@ -3,7 +3,6 @@ use koopa::ir::entities;
 use reg_manager::RegManager;
 use func_meta::FuncMeta;
 use super::riscv::{self, Reg};
-use crate::utils::token_generator::TokenGenerator;
 
 mod build;
 mod reg_manager;
@@ -14,9 +13,11 @@ mod build_helpers;
 pub struct RiscvBuilder {
     prog: riscv::Program,
     reg_mgr: RegManager,
-    token_gen: TokenGenerator,
     func_meta: FuncMeta,
     inst2reg: HashMap<entities::Value, Reg>,
+    // then_label_gen: TokenGenerator,
+    // else_label_gen: TokenGenerator,
+    // endif_label_gen: TokenGenerator,
 }
 
 impl RiscvBuilder {
@@ -24,7 +25,9 @@ impl RiscvBuilder {
         Self {
             prog: riscv::Program::new(),
             reg_mgr: RegManager::new(),
-            token_gen: TokenGenerator::new("l"),
+            // then_label_gen: TokenGenerator::new("then_"),
+            // else_label_gen: TokenGenerator::new("else_"),
+            // endif_label_gen: TokenGenerator::new("endif_"),
             func_meta: FuncMeta::new(),
             inst2reg: HashMap::new(),
         }
@@ -38,9 +41,9 @@ impl RiscvBuilder {
         res
     }
 
-    fn make_token(&self) -> String {
-        self.token_gen.generate()
-    }
+    // fn make_token(&self) -> String {
+    //     self.else_label_gen.generate()
+    // }
 
     fn alloc_reg(&mut self, inst: entities::Value, reg: Option<Reg>) -> Reg {
         let reg = self.reg_mgr.alloc(reg);
@@ -60,9 +63,10 @@ impl RiscvBuilder {
         self.inst2reg.insert(new_inst, reg);
     }
 
-    fn free_reg(&mut self, inst: entities::Value, reg: Reg) {
+    fn free_reg(&mut self, inst: entities::Value) {
+        // println!("free_reg: {inst:?}");
+        let reg = self.inst2reg.remove(&inst).unwrap_or("x0");
         self.reg_mgr.free(reg);
-        self.inst2reg.remove(&inst);
     }
 
     fn build_func_meta(&mut self, func: &entities::FunctionData) {
