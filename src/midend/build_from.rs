@@ -103,8 +103,10 @@ impl BuildFrom<FuncDef> for KoopaTextBuilder {
     fn build_from(&mut self, func_def: &FuncDef) -> Option<String> {
         push_text!(self, "fun @{}(): ", &func_def.1);
         self.build_from(&func_def.0);
-        push_text!(self, " ");
+        push_text!(self, " {{\n");
+        push_text!(self, "%entry:\n");
         self.build_from(&func_def.2);
+        push_text!(self, "}}\n");
         None
     }
 }
@@ -121,12 +123,9 @@ impl BuildFrom<FuncType> for KoopaTextBuilder {
 
 impl BuildFrom<Block> for KoopaTextBuilder {
     fn build_from(&mut self, block: &Block) -> Option<String> {
-        push_text!(self, "{{\n");
-        push_text!(self, "%entry:\n");
         for block_item in &block.0 {
             self.build_from(block_item);
         }
-        push_text!(self, "}}\n");
         None
     }
 }
@@ -139,6 +138,13 @@ impl BuildFrom<Stmt> for KoopaTextBuilder {
                 let src = self.build_from(exp).unwrap();
                 let ident = &lval.0;
                 push_text!(self, "{TAB}store {src}, {ident}\n");
+            }
+            Empty => {}
+            Exp(_exp) => {
+                
+            }
+            Block(block) => {
+                self.build_from(block);
             }
             Return(exp) => {
                 let dst = self.build_from(exp).unwrap();

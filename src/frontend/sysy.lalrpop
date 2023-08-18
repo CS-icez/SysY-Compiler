@@ -34,6 +34,9 @@ Block: Block = "{" <BlockItem*> "}" => Block(<>);
 
 Stmt: Stmt = {
     <LVal> "=" <Exp> ";" => Stmt::Assign(<>),
+    ";" => Stmt::Empty,
+    <Exp> ";" => Stmt::Exp(<>),
+    <Block> => Stmt::Block(<>),
     "return" <Exp> ";" => Stmt::Return(<>),
 };
 

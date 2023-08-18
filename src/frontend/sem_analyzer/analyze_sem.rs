@@ -30,9 +30,11 @@ impl Analyze<FuncDef> for SemAnalyzer {
 
 impl Analyze<Block> for SemAnalyzer {
     fn analyze(&mut self, block: &mut Block) {
+        self.enter_scope();
         for block_item in &mut block.0 {
             self.analyze(block_item);
         }
+        self.exit_scope();
     }
 }
 
@@ -45,6 +47,9 @@ impl Analyze<Stmt> for SemAnalyzer {
                 self.update(lval);
                 self.update(exp);
             }
+            Empty => {}
+            Exp(exp) => self.update(exp),
+            Block(block) => self.analyze(block),
             Return(exp) => self.update(exp),
         }
     }

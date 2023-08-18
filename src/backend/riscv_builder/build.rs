@@ -106,6 +106,7 @@ impl RiscvBuilder {
                 let ident = dfg.value(store.dest()).name().as_ref().unwrap();
                 let imm = self.offset(ident) as i32;
                 self.build_sw(&rs, imm, "sp");
+                self.free_reg(store.dest(), rs);
                 None
             }
 

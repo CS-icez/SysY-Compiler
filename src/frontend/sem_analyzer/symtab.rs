@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use Symbol::*;
 
 #[derive(Clone)]
 pub enum Symbol {
@@ -19,28 +18,11 @@ impl SymTab {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn contains(&self, name: &str) -> bool {
-        self.table.contains_key(name)
-    }
-
-    pub fn get(&self, name: &str) -> &Symbol {
+    pub fn get(&self, name: &str) -> Option<&Symbol> {
         self.table.get(name)
-            .expect(&format!("Symbol {name} not found"))
     }
 
-    pub fn insert_int(&mut self, name: String) {
-        let token = format!("@{name}");
-        self.table.insert(
-            name,
-            Int { token },
-        );
-    }
-
-    pub fn insert_const_int(&mut self, name: String, value: i32) {
-        self.table.insert(
-            name.clone(),
-            ConstInt { token: name, value }
-        );
+    pub fn insert(&mut self, name: String, symbol: Symbol) {
+        self.table.insert(name, symbol);
     }
 }

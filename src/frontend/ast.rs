@@ -18,9 +18,14 @@ pub enum FuncType {
 pub struct Block(pub Vec<BlockItem>);
 
 /// Stmt ::= LVal "=" Exp ";"
+///     | [Exp] ";"
+///     | Block
 ///     | "return" Exp ";"
 pub enum Stmt {
     Assign(LVal, Exp),
+    Empty,
+    Exp(Exp),
+    Block(Block),
     Return(Exp),
 }
 
