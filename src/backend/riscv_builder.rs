@@ -1,17 +1,22 @@
+use std::collections::HashMap;
 use koopa::ir::entities;
 use reg_manager::RegManager;
+use func_meta::FuncMeta;
 use super::riscv;
 use crate::utils::token_generator::TokenGenerator;
 
 mod build;
 mod reg_manager;
-mod riscv_helpers;
+mod func_meta;
+mod build_helpers;
 
 #[derive(Default)]
 pub struct RiscvBuilder {
     prog: riscv::Program,
     reg_mgr: RegManager,
     token_gen: TokenGenerator,
+    func_meta: FuncMeta,
+    inst2reg: HashMap<entities::Value, String>,
 }
 
 impl RiscvBuilder {
@@ -20,6 +25,8 @@ impl RiscvBuilder {
             prog: riscv::Program::new(),
             reg_mgr: RegManager::new(),
             token_gen: TokenGenerator::new("l"),
+            func_meta: FuncMeta::new(),
+            inst2reg: HashMap::new(),
         }
     }
 
@@ -35,12 +42,40 @@ impl RiscvBuilder {
         self.token_gen.generate()
     }
 
-    fn alloc_reg(&self, reg: Option<String>) -> String {
-        self.reg_mgr.alloc(reg)
+    fn alloc_reg(&mut self, inst: entities::Value, reg: Option<String>) -> String {
+        let reg = self.reg_mgr.alloc(reg);
+        self.inst2reg.insert(inst, reg.clone());
+        reg
     }
 
-    fn free_reg(&self, reg: &str) {
+    fn query_inst(&self, inst: entities::Value) -> String {
+        self.inst2reg.get(&inst)
+            .expect("Instruction not allocated to register")
+            .clone()
+    }
+
+    #[allow(dead_code)]
+    fn replace_reg_owner(&mut self, old_inst: entities::Value, new_inst: entities::Value) {
+        let reg = self.inst2reg.get(&old_inst).unwrap().clone();
+        self.inst2reg.remove(&old_inst);
+        self.inst2reg.insert(new_inst, reg);
+    }
+
+    fn free_reg(&mut self, inst: entities::Value, reg: &str) {
         self.reg_mgr.free(reg);
+        self.inst2reg.remove(&inst);
+    }
+
+    fn build_func_meta(&mut self, func: &entities::FunctionData) {
+        self.func_meta = FuncMeta::from(func);
+    }
+
+    fn frame_size(&self) -> u32 {
+        self.func_meta.frame_size()
+    }
+
+    fn offset(&self, name: &str) -> u32 {
+        self.func_meta.offset(name)
     }
 
     fn back_func_mut(&mut self) -> &mut riscv::Func {

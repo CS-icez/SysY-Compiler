@@ -5,16 +5,16 @@ use crate::backend::riscv::Inst;
 use super::RiscvBuilder;
 
 macro_rules! push_inst {
-    ($self:tt, Inst::$T:ident, Binary, $rhs:expr, $lhs:expr) => {
+    ($self:tt, Inst::$T:ident, Binary, $rd:expr, $rhs:expr, $lhs:expr) => {
         $self.push_inst(Inst::$T {
-            rd: $rhs.clone(),
+            rd: $rd.clone(),
             rs1: $lhs.clone(),
             rs2: $rhs.clone(),
         })
     };
-    ($self:tt, Inst::$T:ident, BinaryImm, $rs:expr, $imm12:literal) => {
+    ($self:tt, Inst::$T:ident, BinaryImm, $rd:expr, $rs:expr, $imm12:literal) => {
         $self.push_inst(Inst::$T {
-            rd: $rs.clone(),
+            rd: $rd.clone(),
             rs: $rs.clone(),
             imm12: $imm12,
         })
@@ -29,15 +29,20 @@ macro_rules! push_inst {
 
 impl RiscvBuilder {
     pub fn build_prog(&mut self, prog: &entities::Program) {
-        for &func in prog.func_layout() {
-            let func = prog.func(func);
+        for &handle in prog.func_layout() {
+            let func = prog.func(handle);
             self.build_func(func);
         }
     }
 
     pub fn build_func(&mut self, func: &entities::FunctionData) {
+        self.build_func_meta(func);
+
         let func_name = &func.name()[1..];
         self.push_func(func_name);
+        
+        let size = self.frame_size() as i32;
+
         let bbs = func.layout().bbs();
         let mut entry = true;
         for (_, node) in bbs {
@@ -49,6 +54,9 @@ impl RiscvBuilder {
                 &temp
             };
             self.push_block(name);
+            if entry {
+                self.build_addi("sp", "sp", -size);
+            }
             entry = false;
             self.build_block(node, func.dfg());
         }
@@ -59,89 +67,115 @@ impl RiscvBuilder {
         node: &layout::BasicBlockNode,
         dfg: &DataFlowGraph
     ) {
-        use entities::ValueKind::*;
-        for &inst in node.insts().keys() {
-            let value = dfg.value(inst);
-            if let Return(_) = value.kind() {
-                let res = self.build_inst(value, dfg, None);
-                if let Some(res) = res {
-                    self.free_reg(&res);
-                }
-            }
+        for &value in node.insts().keys() {
+            // println!("build_block call: {value:?}");
+            self.build_inst(value, dfg, None);
         }
     }
 
     pub fn build_inst(
         &mut self,
-        value: &entities::ValueData,
+        value: entities::Value,
         dfg: &DataFlowGraph,
         dst: Option<String>,
     ) -> Option<String> {
         use entities::ValueKind::*;
         use koopa::ir::BinaryOp::*;
 
-        match value.kind() {
+        let value_data = dfg.value(value);
+        match value_data.kind() {
             Integer(int) => {
                 if dst == None && int.value() == 0 {
                     return Some("x0".to_string());
                 }
-                let rd = self.alloc_reg(dst.clone());
+                let rd = self.alloc_reg(value, dst.clone());
                 let item = Inst::Li { rd: rd.clone(), imm: int.value() };
                 self.push_inst(item);
                 Some(rd)
             }
-            Return(ret) => {
-                if let Some(value) = ret.value() {
-                    let value = dfg.value(value);
-                    let a0 = "a0".to_string();
-                    assert!(dst == None || dst.as_ref().unwrap() == &a0);
-                    self.build_inst(value, dfg, Some(a0.clone()));
-                    self.push_inst(Inst::Ret);
-                    Some(a0)
-                } else {
-                    assert_eq!(dst, None);
-                    self.push_inst(Inst::Ret);
-                    None
-                }
+
+            Alloc(_) => {
+                None
             }
+
+            Load(load) => {
+                let rd = self.alloc_reg(value, dst.clone());
+                let ident = dfg.value(load.src()).name().as_ref().unwrap();
+                let imm = self.offset(ident) as i32;
+                self.build_lw(&rd, imm, "sp");
+                Some(rd)
+            }
+
+            Store(store) => {
+                let rs = self.query_or_build(store.value(), dfg);
+                let ident = dfg.value(store.dest()).name().as_ref().unwrap();
+                let imm = self.offset(ident) as i32;
+                self.build_sw(&rs, imm, "sp");
+                None
+            }
+
             Binary(binary) => {
-                let lhs = self.build_inst(dfg.value(binary.lhs()), dfg, None).unwrap();
-                let rhs = self.build_inst(dfg.value(binary.rhs()), dfg, dst).unwrap();
+                // println!("call build_inst: {binary:#?}");
+                let lhs = self.query_or_build(binary.lhs(), dfg);
+                let rhs = self.query_or_build(binary.rhs(), dfg);
+                let rd = self.alloc_reg(value, dst.clone());
                 match binary.op() {
                     NotEq => {
                         if lhs != "x0" {
-                            push_inst!(self, Inst::Xor, Binary, rhs, lhs);
+                            push_inst!(self, Inst::Xor, Binary, rd, rhs, lhs);
+                            push_inst!(self, Inst::Snez, Unary, rd, rd);
+                        } else {
+                            push_inst!(self, Inst::Snez, Unary, rd, rhs);
                         }
-                        push_inst!(self, Inst::Seqz, Unary, rhs, rhs);
                     }
                     Eq => {
                         if lhs != "x0" {
-                            push_inst!(self, Inst::Xor, Binary, rhs, lhs);
+                            push_inst!(self, Inst::Xor, Binary, rd, rhs, lhs);
+                            push_inst!(self, Inst::Seqz, Unary, rd, rd);
+                        } else {
+                            push_inst!(self, Inst::Seqz, Unary, rd, rhs);
                         }
-                        push_inst!(self, Inst::Snez, Unary, rhs, rhs);
                     }
-                    Gt => push_inst!(self, Inst::Sgt, Binary, rhs, lhs),
-                    Lt => push_inst!(self, Inst::Slt, Binary, rhs, lhs),
+                    Gt => push_inst!(self, Inst::Sgt, Binary, rd, rhs, lhs),
+                    Lt => push_inst!(self, Inst::Slt, Binary, rd, rhs, lhs),
                     Ge => {
-                        push_inst!(self, Inst::Sgt, Binary, rhs, lhs);
-                        push_inst!(self, Inst::Xori, BinaryImm, rhs, 1);
+                        push_inst!(self, Inst::Slt, Binary, rd, rhs, lhs);
+                        push_inst!(self, Inst::Xori, BinaryImm, rd, rd, 1);
                     }
                     Le => {
-                        push_inst!(self, Inst::Slt, Binary, rhs, lhs);
-                        push_inst!(self, Inst::Xori, BinaryImm, rhs, 1);
+                        push_inst!(self, Inst::Sgt, Binary, rd, rhs, lhs);
+                        push_inst!(self, Inst::Xori, BinaryImm, rd, rd, 1);
                     }
-                    Add => push_inst!(self, Inst::Add, Binary, rhs, lhs),
-                    Sub => push_inst!(self, Inst::Sub, Binary, rhs, lhs),
-                    Mul => push_inst!(self, Inst::Mul, Binary, rhs, lhs),
-                    Div => push_inst!(self, Inst::Div, Binary, rhs, lhs),
-                    Mod => push_inst!(self, Inst::Rem, Binary, rhs, lhs),
-                    And => push_inst!(self, Inst::And, Binary, rhs, lhs),
-                    Or => push_inst!(self, Inst::Or, Binary, rhs, lhs),
-                    Xor => push_inst!(self, Inst::Xor, Binary, rhs, lhs),
+                    Add => push_inst!(self, Inst::Add, Binary, rd, rhs, lhs),
+                    Sub => push_inst!(self, Inst::Sub, Binary, rd, rhs, lhs),
+                    Mul => push_inst!(self, Inst::Mul, Binary, rd, rhs, lhs),
+                    Div => push_inst!(self, Inst::Div, Binary, rd, rhs, lhs),
+                    Mod => push_inst!(self, Inst::Rem, Binary, rd, rhs, lhs),
+                    And => push_inst!(self, Inst::And, Binary, rd, rhs, lhs),
+                    Or => push_inst!(self, Inst::Or, Binary, rd, rhs, lhs),
+                    Xor => push_inst!(self, Inst::Xor, Binary, rd, rhs, lhs),
                     _ => unreachable!()
                 }
-                self.free_reg(&lhs);
+                self.free_reg(binary.lhs(), &lhs);
+                self.free_reg(binary.rhs(), &rhs);
                 Some(rhs)
+            }
+
+            Return(ret) => {
+                if let Some(value) = ret.value() {
+                    let a0 = "a0".to_string();
+                    // assert!(dst == None || dst.as_ref().unwrap() == &a0);
+                    let rs = self.query_or_build(value, dfg);
+                    if rs != a0 {
+                        self.push_inst(Inst::Mv {
+                            rd: a0.clone(),
+                            rs: rs.clone(),
+                        });
+                    }
+                }
+                self.build_addi("sp", "sp", self.frame_size() as i32);
+                self.push_inst(Inst::Ret);
+                None
             }
             _ => unreachable!(),
         }

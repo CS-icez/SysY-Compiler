@@ -48,8 +48,24 @@ macro_rules! impl_build_from_binary_op {
                     $arm2(bexps, bexp) => {
                         let src1 = self.build_from(bexps.as_ref()).unwrap();
                         let src2 = self.build_from(bexp.as_ref()).unwrap();
-                        let dst = self.make_token();
-                        push_binary_op!(self, $op, dst, src1, src2);
+                        let dst;
+                        match $op {
+                            "and" => {
+                                let temp1 = self.make_token();
+                                let temp2 = self.make_token();
+                                dst = self.make_token();
+                                push_binary_op!(self, "ne", temp1, 0, src1);
+                                push_binary_op!(self, "ne", temp2, 0, src2);
+                                push_binary_op!(self, "and", dst, temp1, temp2);
+                            }
+                            "or" => {
+                                let temp = self.make_token();
+                                dst = self.make_token();
+                                push_binary_op!(self, "or", temp, src1, src2);
+                                push_binary_op!(self, "ne", dst, 0, temp);
+                            }
+                            _ => panic!("Unknown operator: {}", $op),
+                        }
                         Some(dst)
                     }
                 }

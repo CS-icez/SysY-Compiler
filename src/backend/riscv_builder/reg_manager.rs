@@ -32,7 +32,7 @@ impl RegManager {
     pub fn new() -> Self {
         const ALLOCATED: AtomicBool = AtomicBool::new(true);
         let bitmap = [ALLOCATED; Self::REG_NUM];
-        for i in 5..=7 {
+        for i in 6..=7 {
             bitmap[i].store(false, Relaxed);
         }
         for i in 10..=17 {
@@ -76,7 +76,7 @@ impl RegManager {
 
     #[allow(dead_code)]
     pub fn reset(&self) {
-        for i in 5..=7 {
+        for i in 6..=7 {
             self.bitmap[i].store(false, Relaxed);
         }
         for i in 10..=17 {
