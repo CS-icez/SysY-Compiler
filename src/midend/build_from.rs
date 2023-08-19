@@ -2,7 +2,12 @@ use crate::frontend::ast::*;
 use super::KoopaTextBuilder;
 
 const TAB: &str = KoopaTextBuilder::TAB;
-const NULL: &str = "null";
+
+macro_rules! null {
+    () => {
+        "null".to_string()
+    };
+}
 
 macro_rules! push_text {
     ($self:tt, $($arg:tt)*) => {
@@ -21,14 +26,17 @@ macro_rules! impl_build_from_binary_op {
     ($self:tt, $T:ty, $arm1:tt, $arm2:tt, $O:ty,
         op_rule: $($l:tt => $r:tt),*) => {
         impl BuildFrom<$T> for KoopaTextBuilder {
-            fn build_from(&mut self, exp: &$T) -> String {
+            fn build_from(&mut self, exp: &$T, used: bool) -> String {
                 use $T::*;
                 use $O::*;
                 match exp {
-                    $arm1(bexp) => self.build_from(bexp.as_ref()),
+                    $arm1(bexp) => self.build_from(bexp.as_ref(), used),
                     $arm2(bexps, op, bexp) => {
-                        let src1 = self.build_from(bexps.as_ref());
-                        let src2 = self.build_from(bexp.as_ref());
+                        let src1 = self.build_from(bexps.as_ref(), used);
+                        let src2 = self.build_from(bexp.as_ref(), used);
+                        if !used {
+                            return null!();
+                        }
                         let dst = self.make_num();
                         let op = match op {
                             $($l => $r,)*
@@ -43,97 +51,115 @@ macro_rules! impl_build_from_binary_op {
 }
 
 pub trait BuildFrom<T> {
-    fn build_from(&mut self, target: &T) -> String;
+    fn build_from(&mut self, target: &T, used: bool) -> String;
 }
 
 impl BuildFrom<Program> for KoopaTextBuilder {
-    fn build_from(&mut self, prog: &Program) -> String {
+    fn build_from(&mut self, prog: &Program, _: bool) -> String {
         for comp_unit in &prog.0 {
-            self.build_from(comp_unit);
+            self.build_from(comp_unit, false);
         }
-        NULL.to_owned()
+        null!()
     }
 }
 
 impl BuildFrom<CompUnit> for KoopaTextBuilder {
-    fn build_from(&mut self, comp_unit: &CompUnit) -> String {
+    fn build_from(&mut self, comp_unit: &CompUnit, _: bool) -> String {
         use CompUnit::*;
         match comp_unit {
             FuncDef(func_def) => {
-                self.build_from(func_def);
+                self.build_from(func_def, false);
             }
         }
-        NULL.to_owned()
+        null!()
     }
 }
 
 impl BuildFrom<FuncDef> for KoopaTextBuilder {
-    fn build_from(&mut self, func_def: &FuncDef) -> String {
+    fn build_from(&mut self, func_def: &FuncDef, _: bool) -> String {
         self.reset_labels();
-        push_text!(self, "fun @{}(): ", &func_def.1);
-        self.build_from(&func_def.0);
-        push_text!(self, " {{\n");
+        let params = func_def.2
+            .iter()
+            .map(|param| self.build_from(param, false))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let ty = self.build_from(&func_def.0, false);
+        push_text!(self, "fun @{}({params}){ty} {{\n", &func_def.1);
         push_text!(self, "%entry:\n");
-        self.build_from(&func_def.2);
-        push_text!(self, "{TAB}ret 114514\n");
+        func_def.2.iter().for_each(|param| {
+            let ident = &param.1;
+            push_text!(self, "{TAB}{ident} = alloc i32\n");
+            push_text!(self, "{TAB}store {ident}_f, {ident}\n");
+        });
+        self.build_from(&func_def.3, false);
+        match func_def.0 {
+            FuncType::Int => push_text!(self, "{TAB}ret 114514\n"),
+            FuncType::Void => push_text!(self, "{TAB}ret\n"),
+        }
         push_text!(self, "}}\n");
-        NULL.to_owned()
+        null!()
     }
 }
 
 impl BuildFrom<FuncType> for KoopaTextBuilder {
-    fn build_from(&mut self, func_type: &FuncType) -> String {
+    fn build_from(&mut self, func_type: &FuncType, _: bool) -> String {
         use FuncType::*;
         match func_type {
-            Int => push_text!(self, "i32"),
-        }
-        NULL.to_owned()
+            Int => ": i32",
+            Void => "",
+        }.to_string()
+    }
+}
+
+impl BuildFrom<FuncFParam> for KoopaTextBuilder {
+    fn build_from(&mut self, param: &FuncFParam, _: bool) -> String {
+        format!("{}_f: i32", &param.1)
     }
 }
 
 impl BuildFrom<Block> for KoopaTextBuilder {
-    fn build_from(&mut self, block: &Block) -> String {
+    fn build_from(&mut self, block: &Block, _: bool) -> String {
         for block_item in &block.0 {
-            self.build_from(block_item);
+            self.build_from(block_item, false);
         }
-        NULL.to_owned()
+        null!()
     }
 }
 
 impl BuildFrom<Stmt> for KoopaTextBuilder {
-    fn build_from(&mut self, stmt: &Stmt) -> String {
+    fn build_from(&mut self, stmt: &Stmt, _: bool) -> String {
         use Stmt::*;
         match stmt {
             Assign(lval, exp) => {
-                let src = self.build_from(exp);
+                let src = self.build_from(exp, true);
                 let ident = &lval.0;
                 push_text!(self, "{TAB}store {src}, {ident}\n");
             }
             Empty => {}
-            Exp(_exp) => {
-                
+            Exp(exp) => {
+                self.build_from(exp, false);
             }
             Block(block) => {
-                self.build_from(block);
+                self.build_from(block, false);
             }
             If(exp, stmt, opt_stmt) => {
-                let src = self.build_from(exp);
+                let src = self.build_from(exp, true);
                 let then_label = self.make_token("%then_");
                 let else_label = self.make_token("%else_");
                 let endif_label = self.make_token("%endif_");
                 if let Some(else_stmt) = opt_stmt {
                     push_text!(self, "{TAB}br {src}, {then_label}, {else_label}\n");
                     push_text!(self, "{}:\n", then_label);
-                    self.build_from(stmt.as_ref());
+                    self.build_from(stmt.as_ref(), false);
                     push_text!(self, "{TAB}jump {endif_label}\n");
                     push_text!(self, "{}:\n", else_label);
-                    self.build_from(else_stmt.as_ref());
+                    self.build_from(else_stmt.as_ref(), false);
                     push_text!(self, "{TAB}jump {endif_label}\n");
                     push_text!(self, "{endif_label}:\n");
                 } else {
                     push_text!(self, "{TAB}br {src}, {then_label}, {endif_label}\n");
                     push_text!(self, "{}:\n", then_label);
-                    self.build_from(stmt.as_ref());
+                    self.build_from(stmt.as_ref(), false);
                     push_text!(self, "{TAB}jump {endif_label}\n");
                     push_text!(self, "{endif_label}:\n");
                 }
@@ -145,10 +171,10 @@ impl BuildFrom<Stmt> for KoopaTextBuilder {
                 let end = self.make_token("%endwhile_");
                 push_text!(self, "{TAB}jump {entry}\n");
                 push_text!(self, "{}:\n", entry);
-                let cond = self.build_from(exp);
+                let cond = self.build_from(exp, true);
                 push_text!(self, "{TAB}br {cond}, {body}, {end}\n");
                 push_text!(self, "{}:\n", body);
-                self.build_from(stmt.as_ref());
+                self.build_from(stmt.as_ref(), false);
                 push_text!(self, "{TAB}jump {entry}\n");
                 push_text!(self, "{end}:\n");
                 self.exit_loop();
@@ -166,47 +192,65 @@ impl BuildFrom<Stmt> for KoopaTextBuilder {
                 push_text!(self, "{label}:\n");
             }
             Return(exp) => {
-                let dst = self.build_from(exp);
+                let dst = self.build_from(exp, true);
                 push_text!(self, "{TAB}ret {dst}\n");
                 let label = self.make_koopa();
                 push_text!(self, "{label}:\n");
             }
         }
-        NULL.to_owned()
+        null!()
     }
 }
 
 impl BuildFrom<Number> for KoopaTextBuilder {
-    fn build_from(&mut self, number: &Number) -> String {
+    fn build_from(&mut self, number: &Number, _: bool) -> String {
         number.0.to_string()
     }
 }
 
 impl BuildFrom<Exp> for KoopaTextBuilder {
-    fn build_from(&mut self, exp: &Exp) -> String {
-        self.build_from(&exp.0)
+    fn build_from(&mut self, exp: &Exp, used: bool) -> String {
+        self.build_from(&exp.0, used)
     }
 }
 
 impl BuildFrom<PrimaryExp> for KoopaTextBuilder {
-    fn build_from(&mut self, primary_exp: &PrimaryExp) -> String {
+    fn build_from(&mut self, primary_exp: &PrimaryExp, used: bool) -> String {
         use PrimaryExp::*;
         match primary_exp {
-            BracketedExp(bexp) => self.build_from(bexp.as_ref()),
-            Number(number) => self.build_from(number),
-            LVal(lval) => self.build_from(lval),
+            BracketedExp(bexp) => self.build_from(bexp.as_ref(), used),
+            Number(number) => self.build_from(number, used),
+            LVal(lval) => self.build_from(lval, used),
         }
     }
 }
 
 impl BuildFrom<UnaryExp> for KoopaTextBuilder {
-    fn build_from(&mut self, unary_exp: &UnaryExp) -> String {
+    fn build_from(&mut self, unary_exp: &UnaryExp, used: bool) -> String {
         use UnaryExp::*;
         use UnaryOp::*;
         match unary_exp {
-            Primary(bexp) => self.build_from(bexp.as_ref()),
+            Primary(bexp) => self.build_from(bexp.as_ref(), used),
+            FuncCall(ident, exps) => {
+                let args = exps
+                    .iter()
+                    .map(|exp| self.build_from(exp, true))
+                    .collect::<Vec<_>>();
+                push_text!(self, "{TAB}");
+                let mut dst = null!();
+                if used {
+                    dst = self.make_num();
+                    push_text!(self, "{dst} = ");
+                }
+                let text = args.join(", ");
+                push_text!(self, "call @{ident}({text})\n");
+                dst
+            }
             OpUnary(op, bexp) => {
-                let src = self.build_from(bexp.as_ref());
+                let src = self.build_from(bexp.as_ref(), used);
+                if !used {
+                    return null!();
+                }
                 let dst;
                 match op {
                     Plus => dst = src,
@@ -238,20 +282,30 @@ impl_build_from_binary_op!(self, EqExp, Rel, EqOpRel, EqOp,
     op_rule: Eq => "eq", Ne => "ne");
     
 impl BuildFrom<LAndExp> for KoopaTextBuilder {
-    fn build_from(&mut self, land_exp: &LAndExp) -> String {
+    fn build_from(&mut self, land_exp: &LAndExp, used: bool) -> String {
         use LAndExp::*;
         match land_exp {
-            Eq(bexp) => self.build_from(bexp.as_ref()),
+            Eq(bexp) => self.build_from(bexp.as_ref(), used),
             LAndEq(bexps, bexp) => {
-                let var = self.make_tmp();
                 let then_label = self.make_token("%then_");
+                let _ = self.make_token("%else_");
                 let endif_label = self.make_token("%endif_");
+                if !used {
+                    let src1 = self.build_from(bexps.as_ref(), true);
+                    push_text!(self, "{TAB}br {src1}, {then_label}, {endif_label}\n");
+                    push_text!(self, "{}:\n", then_label);
+                    self.build_from(bexp.as_ref(), false);
+                    push_text!(self, "{TAB}jump {endif_label}\n");
+                    push_text!(self, "{endif_label}:\n");
+                    return null!();
+                }
+                let var = self.make_tmp();
                 push_text!(self, "{TAB}{var} = alloc i32\n");
                 push_text!(self, "{TAB}store 0, {var}\n");
-                let src1 = self.build_from(bexps.as_ref());
+                let src1 = self.build_from(bexps.as_ref(), true);
                 push_text!(self, "{TAB}br {src1}, {then_label}, {endif_label}\n");
                 push_text!(self, "{}:\n", then_label);
-                let src2 = self.build_from(bexp.as_ref());
+                let src2 = self.build_from(bexp.as_ref(), true);
                 let temp = self.make_num();
                 push_text!(self, "{TAB}{temp} = ne 0, {src2}\n");
                 push_text!(self, "{TAB}store {temp}, {var}\n");
@@ -275,20 +329,30 @@ impl BuildFrom<LAndExp> for KoopaTextBuilder {
 }
 
 impl BuildFrom<LOrExp> for KoopaTextBuilder {
-    fn build_from(&mut self, lor_exp: &LOrExp) -> String {
+    fn build_from(&mut self, lor_exp: &LOrExp, used: bool) -> String {
         use LOrExp::*;
         match lor_exp {
-            LAnd(bexp) => self.build_from(bexp.as_ref()),
+            LAnd(bexp) => self.build_from(bexp.as_ref(), used),
             LOrLAnd(bexps, bexp) => {
-                let var = self.make_tmp();
                 let then_label = self.make_token("%then_");
+                let _ = self.make_token("%else_");
                 let endif_label = self.make_token("%endif_");
+                if !used {
+                    let src1 = self.build_from(bexps.as_ref(), true);
+                    push_text!(self, "{TAB}br {src1}, {endif_label}, {then_label}\n");
+                    push_text!(self, "{}:\n", then_label);
+                    self.build_from(bexp.as_ref(), false);
+                    push_text!(self, "{TAB}jump {endif_label}\n");
+                    push_text!(self, "{endif_label}:\n");
+                    return null!();
+                }
+                let var = self.make_tmp();
                 push_text!(self, "{TAB}{var} = alloc i32\n");
                 push_text!(self, "{TAB}store 1, {var}\n");
-                let src1 = self.build_from(bexps.as_ref());
+                let src1 = self.build_from(bexps.as_ref(), true);
                 push_text!(self, "{TAB}br {src1}, {endif_label}, {then_label}\n");
                 push_text!(self, "{}:\n", then_label);
-                let src2 = self.build_from(bexp.as_ref());
+                let src2 = self.build_from(bexp.as_ref(), true);
                 let temp = self.make_num();
                 push_text!(self, "{TAB}{temp} = ne 0, {src2}\n");
                 push_text!(self, "{TAB}store {temp}, {var}\n");
@@ -310,35 +374,35 @@ impl BuildFrom<LOrExp> for KoopaTextBuilder {
 }
 
 impl BuildFrom<Decl> for KoopaTextBuilder {
-    fn build_from(&mut self, decl: &Decl) -> String {
+    fn build_from(&mut self, decl: &Decl, _: bool) -> String {
         use Decl::*;
         match decl {
-            ConstDecl(const_decl) => self.build_from(const_decl),
-            VarDecl(var_decl) => self.build_from(var_decl),
+            ConstDecl(const_decl) => self.build_from(const_decl, false),
+            VarDecl(var_decl) => self.build_from(var_decl, false),
         }
     }
 }
 
 impl BuildFrom<ConstDecl> for KoopaTextBuilder {
-    fn build_from(&mut self, _: &ConstDecl) -> String {
-        NULL.to_owned()
+    fn build_from(&mut self, _: &ConstDecl, _: bool) -> String {
+        null!()
     }
 }
 
 impl BuildFrom<VarDecl> for KoopaTextBuilder {
-    fn build_from(&mut self, var_decl: &VarDecl) -> String {
+    fn build_from(&mut self, var_decl: &VarDecl, _: bool) -> String {
         for var_def in &var_decl.1 {
-            self.build_from(var_def);
+            self.build_from(var_def, false);
         }
-        NULL.to_owned()
+        null!()
     }
 }
 
 impl BuildFrom<VarDef> for KoopaTextBuilder {
-    fn build_from(&mut self, var_def: &VarDef) -> String {
+    fn build_from(&mut self, var_def: &VarDef, _: bool) -> String {
         match var_def {
             VarDef::Init(ident, init_val) => {
-                let src = self.build_from(init_val);
+                let src = self.build_from(init_val, true);
                 push_text!(self, "{TAB}{ident} = alloc i32\n");
                 push_text!(self, "{TAB}store {src}, {ident}\n");
             }
@@ -346,28 +410,31 @@ impl BuildFrom<VarDef> for KoopaTextBuilder {
                 push_text!(self, "{TAB}{ident} = alloc i32\n");
             }
         }
-        NULL.to_owned()
+        null!()
     }
 }
 
 impl BuildFrom<InitVal> for KoopaTextBuilder {
-    fn build_from(&mut self, init_val: &InitVal) -> String {
-        self.build_from(&init_val.0)
+    fn build_from(&mut self, init_val: &InitVal, used: bool) -> String {
+        self.build_from(&init_val.0, used)
     }
 }
 
 impl BuildFrom<BlockItem> for KoopaTextBuilder {
-    fn build_from(&mut self, block_item: &BlockItem) -> String {
+    fn build_from(&mut self, block_item: &BlockItem, _: bool) -> String {
         use BlockItem::*;
         match block_item {
-            Stmt(stmt) => self.build_from(stmt),
-            Decl(decl) => self.build_from(decl),
+            Stmt(stmt) => self.build_from(stmt, false),
+            Decl(decl) => self.build_from(decl, false),
         }
     }
 }
 
 impl BuildFrom<LVal> for KoopaTextBuilder {
-    fn build_from(&mut self, lval: &LVal) -> String {
+    fn build_from(&mut self, lval: &LVal, used: bool) -> String {
+        if !used {
+            return null!();
+        }
         let ident = &lval.0;
         let dst = self.make_num();
         push_text!(self, "{TAB}{dst} = load {ident}\n");

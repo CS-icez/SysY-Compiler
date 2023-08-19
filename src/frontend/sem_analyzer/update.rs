@@ -66,6 +66,11 @@ impl Update<UnaryExp> for SemAnalyzer {
         use UnaryExp::*;
         match exp {
             Primary(bexp) => self.update(bexp.as_mut()),
+            FuncCall(_, exps) => {
+                for arg in exps {
+                    self.update(arg);
+                }
+            },
             OpUnary(_, bexp) => self.update(bexp.as_mut()),
         }
     }

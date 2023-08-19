@@ -83,6 +83,7 @@ impl Eval<UnaryExp> for SemAnalyzer {
         use UnaryOp::*;
         match exp {
             Primary(bexp) => self.eval(bexp.as_ref()),
+            FuncCall(_, _) => panic!("Function call in constant expression"),
             OpUnary(op, bexp) => {
                 let value = self.eval(bexp.as_ref());
                 match op {

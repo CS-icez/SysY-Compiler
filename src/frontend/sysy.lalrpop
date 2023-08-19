@@ -26,9 +26,14 @@ CompUnit: CompUnit = {
     <FuncDef> => CompUnit::FuncDef(<>),
 };
 
-FuncDef: FuncDef = <FuncType> <Ident> "(" ")" <Block> => FuncDef(<>);
+FuncDef: FuncDef = <FuncType> <Ident> "(" <Comma<FuncFParam>> ")" <Block> => FuncDef(<>);
 
-FuncType: FuncType = "int" => FuncType::Int;
+FuncType: FuncType = {
+    "int" => FuncType::Int,
+    "void" => FuncType::Void,
+};
+
+FuncFParam: FuncFParam = <BType> <Ident> => FuncFParam(<>);
 
 Block: Block = "{" <BlockItem*> "}" => Block(<>);
 
@@ -79,6 +84,7 @@ PrimaryExp: PrimaryExp = {
 
 UnaryExp: UnaryExp = {
     <exp: PrimaryExp> => UnaryExp::Primary(Box::new(exp)),
+    <Ident> "(" <Comma<Exp>> ")" => UnaryExp::FuncCall(<>),
     <op: UnaryOp> <exp: UnaryExp> => UnaryExp::OpUnary(op, Box::new(exp)),
 };
 

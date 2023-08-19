@@ -6,13 +6,17 @@ pub enum CompUnit {
     FuncDef(FuncDef),
 }
 
-/// FuncDef ::= FuncType IDENT "(" ")" Block
-pub struct FuncDef(pub FuncType, pub String, pub Block);
+/// FuncDef ::= FuncType IDENT "(" [FuncFParams] ")" Block
+/// FuncFParams ::= FuncFParam {"," FuncFParam}
+pub struct FuncDef(pub FuncType, pub String, pub Vec<FuncFParam>, pub Block);
 
 /// FuncType ::= "int"
 pub enum FuncType {
-    Int,
+    Int, Void,
 }
+
+/// FuncFParam ::= BType IDENT
+pub struct FuncFParam(pub BType, pub String);
 
 /// Block ::= "{" {BlockItem} "}"
 pub struct Block(pub Vec<BlockItem>);
@@ -50,9 +54,13 @@ pub enum PrimaryExp {
     LVal(LVal),
 }
 
-/// UnaryExp ::= PrimaryExp | UnaryOp UnaryExp;
+/// UnaryExp ::= PrimaryExp
+///     | IDENT "(" [FuncRParams] ")"
+///     | UnaryOp UnaryExp;
+/// FuncRParams ::= Exp {"," Exp}
 pub enum UnaryExp {
     Primary(Box<PrimaryExp>),
+    FuncCall(String, Vec<Exp>),
     OpUnary(UnaryOp, Box<UnaryExp>),
 }
 

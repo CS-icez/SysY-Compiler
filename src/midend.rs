@@ -35,7 +35,7 @@ impl KoopaTextBuilder {
     }
 
     pub fn build(&mut self, prog: &ast::Program) -> String {
-        self.build_from(prog);
+        self.build_from(prog, false);
         // Huge overhead here, yet don't know which syntax to use to avoid it.
         let res = self.text.clone();
         *self = Default::default();

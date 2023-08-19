@@ -7,9 +7,11 @@ pub trait Analyze<T> {
 
 impl Analyze<Program> for SemAnalyzer {
     fn analyze(&mut self, prog: &mut Program) {
+        self.enter_scope();
         for comp_unit in &mut prog.0 {
             self.analyze(comp_unit);
         }
+        self.exit_scope();
     }
 }
 
@@ -24,7 +26,11 @@ impl Analyze<CompUnit> for SemAnalyzer {
 
 impl Analyze<FuncDef> for SemAnalyzer {
     fn analyze(&mut self, func_def: &mut FuncDef) {
-        self.analyze(&mut func_def.2);
+        for param in &mut func_def.2 {
+            self.insert_int(param.1.clone());
+            param.1 = self.name(&param.1[..]).to_string();
+        }
+        self.analyze(&mut func_def.3);
     }
 }
 
