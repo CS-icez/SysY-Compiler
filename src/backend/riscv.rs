@@ -4,12 +4,15 @@ pub type Reg = &'static str;
 
 #[derive(Default, Clone)]
 pub struct Program {
-    pub global_decls: LinkedList<GlobalDecl>,
+    pub global_defs: LinkedList<GlobalDef>,
     pub funcs: LinkedList<Func>,
 }
 
 #[derive(Default, Clone)]
-pub struct GlobalDecl;
+pub struct GlobalDef {
+    pub name: String,
+    pub init: i32,
+}
 
 #[derive(Default, Clone)]
 pub struct Func {
@@ -60,7 +63,7 @@ pub enum Inst {
 impl Program {
     pub const fn new() -> Self {
         Self {
-            global_decls: LinkedList::new(),
+            global_defs: LinkedList::new(),
             funcs: LinkedList::new(),
         }
     }

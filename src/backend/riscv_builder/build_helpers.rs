@@ -68,13 +68,14 @@ impl RiscvBuilder {
         &mut self,
         value: Value,
         dfg: &DataFlowGraph,
+        prog: &Program,
         dst: Option<Reg>,
     ) -> Reg {
         use ValueKind::*;
         let value_data = dfg.value(value);
         // println!("call query_or_build: {value_data:#?}");
         if let Integer(_) = value_data.kind() {
-            self.build_inst(value, dfg, dst).unwrap()
+            self.build_inst(value, dfg, prog, dst).unwrap()
         } else if let FuncArgRef(arg_ref) = value_data.kind() {
             let idx = arg_ref.index() as u32;
             if idx < 8 {

@@ -56,6 +56,17 @@ pub trait BuildFrom<T> {
 
 impl BuildFrom<Program> for KoopaTextBuilder {
     fn build_from(&mut self, prog: &Program, _: bool) -> String {
+        push_text!(self, "\
+            decl @getint(): i32\n\
+            decl @getch(): i32\n\
+            decl @getarray(*i32): i32\n\
+            decl @putint(i32)\n\
+            decl @putch(i32)\n\
+            decl @putarray(i32, *i32)\n\
+            decl @starttime()\n\
+            decl @stoptime()\n\n"
+        );
+
         for comp_unit in &prog.0 {
             self.build_from(comp_unit, false);
         }
@@ -67,6 +78,9 @@ impl BuildFrom<CompUnit> for KoopaTextBuilder {
     fn build_from(&mut self, comp_unit: &CompUnit, _: bool) -> String {
         use CompUnit::*;
         match comp_unit {
+            GlobalDecl(global_decl) => {
+                self.build_from(global_decl, false);
+            }
             FuncDef(func_def) => {
                 self.build_from(func_def, false);
             }
@@ -93,21 +107,12 @@ impl BuildFrom<FuncDef> for KoopaTextBuilder {
         });
         self.build_from(&func_def.3, false);
         match func_def.0 {
-            FuncType::Int => push_text!(self, "{TAB}ret 114514\n"),
-            FuncType::Void => push_text!(self, "{TAB}ret\n"),
+            BType::Int => push_text!(self, "{TAB}ret 114514\n"),
+            BType::Void => push_text!(self, "{TAB}ret\n"),
         }
         push_text!(self, "}}\n");
+        push_text!(self, "\n");
         null!()
-    }
-}
-
-impl BuildFrom<FuncType> for KoopaTextBuilder {
-    fn build_from(&mut self, func_type: &FuncType, _: bool) -> String {
-        use FuncType::*;
-        match func_type {
-            Int => ": i32",
-            Void => "",
-        }.to_string()
     }
 }
 
@@ -373,6 +378,31 @@ impl BuildFrom<LOrExp> for KoopaTextBuilder {
     }
 }
 
+impl BuildFrom<GlobalDecl> for KoopaTextBuilder {
+    fn build_from(&mut self, global_decl: &GlobalDecl, _: bool) -> String {
+        use Decl::*;
+        use VarDef::*;
+        let decl = &global_decl.0;
+        match decl {
+            ConstDecl(_) => {}
+            VarDecl(var_decl) => {
+                for var_def in &var_decl.1 {
+                    match var_def {
+                        Init(ident, init_val) => {
+                            let val = self.build_from(init_val, true);
+                            push_text!(self, "global {ident} = alloc i32, {val}\n\n");
+                        }
+                        NoInit(ident) => {
+                            push_text!(self, "global {ident} = alloc i32, zeroinit\n\n");
+                        }
+                    }
+                }
+            }
+        }
+        null!()
+    }
+}
+
 impl BuildFrom<Decl> for KoopaTextBuilder {
     fn build_from(&mut self, decl: &Decl, _: bool) -> String {
         use Decl::*;
@@ -386,6 +416,16 @@ impl BuildFrom<Decl> for KoopaTextBuilder {
 impl BuildFrom<ConstDecl> for KoopaTextBuilder {
     fn build_from(&mut self, _: &ConstDecl, _: bool) -> String {
         null!()
+    }
+}
+
+impl BuildFrom<BType> for KoopaTextBuilder {
+    fn build_from(&mut self, btype: &BType, _: bool) -> String {
+        use BType::*;
+        match btype {
+            Int => ": i32",
+            Void => "",
+        }.to_string()
     }
 }
 
@@ -416,7 +456,10 @@ impl BuildFrom<VarDef> for KoopaTextBuilder {
 
 impl BuildFrom<InitVal> for KoopaTextBuilder {
     fn build_from(&mut self, init_val: &InitVal, used: bool) -> String {
-        self.build_from(&init_val.0, used)
+        match init_val {
+            InitVal::Exp(exp) => self.build_from(exp, used),
+            InitVal::Number(number) => self.build_from(number, used),
+        }
     }
 }
 

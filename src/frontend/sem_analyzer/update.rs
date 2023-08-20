@@ -85,7 +85,11 @@ impl_update_binary_op!(LOrExp, LAnd, LOrLAnd, fixed);
 
 impl Update<InitVal> for SemAnalyzer {
     fn update(&mut self, init_val: &mut InitVal) {
-        self.update(&mut init_val.0);
+        use InitVal::*;
+        match init_val {
+            Exp(exp) => self.update(exp),
+            Number(_) => {}
+        }
     }
 }
 

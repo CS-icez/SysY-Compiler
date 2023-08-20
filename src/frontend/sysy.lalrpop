@@ -23,15 +23,11 @@ Comma<T>: Vec<T> = {
 pub Program: Program = <CompUnit*> => Program(<>);
 
 CompUnit: CompUnit = {
+    <GlobalDecl> => CompUnit::GlobalDecl(<>),
     <FuncDef> => CompUnit::FuncDef(<>),
 };
 
-FuncDef: FuncDef = <FuncType> <Ident> "(" <Comma<FuncFParam>> ")" <Block> => FuncDef(<>);
-
-FuncType: FuncType = {
-    "int" => FuncType::Int,
-    "void" => FuncType::Void,
-};
+FuncDef: FuncDef = <BType> <Ident> "(" <Comma<FuncFParam>> ")" <Block> => FuncDef(<>);
 
 FuncFParam: FuncFParam = <BType> <Ident> => FuncFParam(<>);
 
@@ -159,6 +155,8 @@ LOrExp: LOrExp = {
     ),
 };
 
+GlobalDecl: GlobalDecl = <Decl> => GlobalDecl(<>);
+
 Decl: Decl = {
     <ConstDecl> => Decl::ConstDecl(<>),
     <VarDecl> => Decl::VarDecl(<>),
@@ -168,6 +166,7 @@ ConstDecl: ConstDecl = "const" <BType> <Comma<ConstDef>> ";" => ConstDecl(<>);
 
 BType: BType = {
     "int" => BType::Int,
+    "void" => BType::Void,
 }
 
 ConstDef: ConstDef = <Ident> "=" <ConstInitVal> => ConstDef(<>);
@@ -181,7 +180,7 @@ VarDef: VarDef = {
     <Ident> "=" <InitVal> => VarDef::Init(<>),
 };
 
-InitVal: InitVal = <Exp> => InitVal(<>);
+InitVal: InitVal = <Exp> => InitVal::Exp(<>);
 
 BlockItem: BlockItem = {
     <Decl> => BlockItem::Decl(<>),

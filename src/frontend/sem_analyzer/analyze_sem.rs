@@ -19,6 +19,7 @@ impl Analyze<CompUnit> for SemAnalyzer {
     fn analyze(&mut self, comp_unit: &mut CompUnit) {
         use CompUnit::*;
         match comp_unit {
+            GlobalDecl(global_decl) => self.analyze(global_decl),
             FuncDef(func_def) => self.analyze(func_def),
         }
     }
@@ -70,6 +71,33 @@ impl Analyze<Stmt> for SemAnalyzer {
             Break => {}
             Continue => {}
             Return(exp) => self.update(exp),
+        }
+    }
+}
+
+impl Analyze<GlobalDecl> for SemAnalyzer {
+    fn analyze(&mut self, global_decl: &mut GlobalDecl) {
+        use Decl::*;
+        use VarDef::*;
+        use super::eval::Eval;
+        match &mut global_decl.0 {
+            ConstDecl(const_decl) => self.analyze(const_decl),
+            VarDecl(var_decl) => {
+                for var_def in &mut var_decl.1 {
+                    match var_def {
+                        NoInit(name) => {
+                            self.insert_int(name.to_string());
+                            *name = self.name(&name[..]).to_string();
+                        }
+                        Init(name, init_val) => {
+                            self.insert_int(name.to_string());
+                            *name = self.name(&name[..]).to_string();
+                            let value = self.eval(init_val);
+                            *init_val = InitVal::Number(Number(value));
+                        }
+                    }
+                }
+            }
         }
     }
 }

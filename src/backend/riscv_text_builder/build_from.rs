@@ -15,15 +15,28 @@ pub trait BuildFrom<T> {
 
 impl BuildFrom<Program> for RiscvTextBuilder {
     fn build_from(&mut self, prog: &Program) {
+        push_text!(self, "{TAB}.data\n");
+        for global_def in &prog.global_defs {
+            self.build_from(global_def);
+        }
+        push_text!(self, "{TAB}.text\n");
         for func in &prog.funcs {
             self.build_from(func);
         }
     }
 }
 
+impl BuildFrom<GlobalDef> for RiscvTextBuilder {
+    fn build_from(&mut self, global_def: &GlobalDef) {
+        push_text!(self, "{TAB}.globl {}\n", global_def.name);
+        push_text!(self, "{}:\n", global_def.name);
+        push_text!(self, "{TAB}.word {}\n", global_def.init);
+        push_text!(self, "\n");
+    }
+}
+
 impl BuildFrom<Func> for RiscvTextBuilder {
     fn build_from(&mut self, func: &Func) {
-        push_text!(self, "{TAB}.text\n");
         push_text!(self, "{TAB}.globl {}\n", func.name);
         for block in &func.blocks {
             self.build_from(block);

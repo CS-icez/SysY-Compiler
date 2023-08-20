@@ -99,6 +99,13 @@ impl RiscvBuilder {
         self.back_func_mut().blocks.back_mut().unwrap()
     }
 
+    pub fn push_global_def(&mut self, name: &str, init: i32) {
+        self.prog.global_defs.push_back(riscv::GlobalDef {
+            name: name.to_string(),
+            init,
+        });
+    }
+
     pub fn push_func(&mut self, name: &str) {
         self.prog.funcs.push_back(riscv::Func {
             name: name.to_string(),

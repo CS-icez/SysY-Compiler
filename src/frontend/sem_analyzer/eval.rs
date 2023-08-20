@@ -129,6 +129,16 @@ impl_eval_binary_op!(LAndExp, Eq, LAndEq,
 impl_eval_binary_op!(LOrExp, LAnd, LOrLAnd,
     (|x, y| (x != 0 || y != 0) as i32));
 
+impl Eval<InitVal> for SemAnalyzer {
+    fn eval(&self, target: &InitVal) -> i32 {
+        use InitVal::*;
+        match target {
+            Exp(exp) => self.eval(exp),
+            Number(num) => self.eval(num),
+        }
+    }
+}
+
 impl Eval<LVal> for SemAnalyzer {
     fn eval(&self, lval: &LVal) -> i32 {
         self.value(&lval.0)

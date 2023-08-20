@@ -52,7 +52,7 @@ impl RegManager {
     // When `reg` is provided but not equal to the returned register `res`,
     // it means a move from `reg` to `res` happened.
     pub fn alloc(&mut self, val: Value, reg: Option<Reg>) -> Reg {
-        println!("alloc: {val:?} to {reg:?}\n");
+        // println!("alloc: {val:?} to {reg:?}\n");
         assert!(self.val2reg.get(&val) == None, "Value already allocated");
         if let Some(reg) = reg { // Required register is specified.
             if reg == "x0" {
@@ -128,7 +128,7 @@ impl RegManager {
     }
 
     pub fn free(&mut self, val: Value, reg: Reg) {
-        println!("free: {val:?} from {reg:?}\n");
+        // println!("free: {val:?} from {reg:?}\n");
         self.val2reg.remove(&val);
         // You may free `x0` whenever you like.
         if reg == "x0" {

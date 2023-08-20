@@ -1,19 +1,18 @@
+//! I adjusted the grammar specified in https://pku-minic.github.io/online-doc/#/misc-app-ref/sysy-spec
+//! for convenience, while maintaining equivalence.
+
 /// Program ::= CompUnit {CompUnit}
 pub struct Program(pub Vec<CompUnit>);
 
-/// CompUnit ::= FuncDef
+/// CompUnit ::= GlobalDecl | FuncDef
 pub enum CompUnit {
+    GlobalDecl(GlobalDecl),
     FuncDef(FuncDef),
 }
 
-/// FuncDef ::= FuncType IDENT "(" [FuncFParams] ")" Block
+/// FuncDef ::= BType IDENT "(" [FuncFParams] ")" Block
 /// FuncFParams ::= FuncFParam {"," FuncFParam}
-pub struct FuncDef(pub FuncType, pub String, pub Vec<FuncFParam>, pub Block);
-
-/// FuncType ::= "int"
-pub enum FuncType {
-    Int, Void,
-}
+pub struct FuncDef(pub BType, pub String, pub Vec<FuncFParam>, pub Block);
 
 /// FuncFParam ::= BType IDENT
 pub struct FuncFParam(pub BType, pub String);
@@ -125,6 +124,9 @@ pub enum LOrExp {
     LOrLAnd(Box<LOrExp>, Box<LAndExp>),
 }
 
+/// GlobalDecl ::= Decl
+pub struct GlobalDecl(pub Decl);
+
 /// Decl ::= ConstDecl | VarDecl
 pub enum Decl {
     ConstDecl(ConstDecl),
@@ -136,7 +138,7 @@ pub struct ConstDecl(pub BType, pub Vec<ConstDef>);
 
 /// BType ::= "int"
 pub enum BType {
-    Int,
+    Int, Void,
 }
 
 /// ConstDef ::= IDENT "=" ConstInitVal
@@ -155,7 +157,10 @@ pub enum VarDef {
 }
 
 /// InitVal ::= Exp
-pub struct InitVal(pub Exp);
+pub enum InitVal {
+    Exp(Exp),
+    Number(Number),
+}
 
 
 /// BlockItem ::= Decl | Stmt

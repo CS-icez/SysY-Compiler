@@ -24,15 +24,42 @@ macro_rules! push_inst {
 
 impl RiscvBuilder {
     pub fn build_prog(&mut self, prog: &Program) {
+        for &handle in prog.inst_layout() {
+            let data = prog.borrow_value(handle);
+            self.build_data(&data, prog);
+        }
         for &handle in prog.func_layout() {
             let func = prog.func(handle);
             let name = &func.name()[1..];
             self.record_func_name(handle, name);
-            self.build_func(func);
+            self.build_func(func, prog);
         }
     }
 
-    pub fn build_func(&mut self, func: &FunctionData) {
+    pub fn build_data(&mut self, data: &ValueData, prog: &Program) {
+        use ValueKind::*;
+        let name = data.name().as_ref().unwrap();
+        let name = &name[1..];
+
+        let GlobalAlloc(alloc) = data.kind() else {
+            panic!("Unexpected data kind");
+        };
+
+        let init = match prog.borrow_value(alloc.init()).kind() {
+            Integer(int) => int.value(),
+            ZeroInit(..) => 0,
+            _ => panic!("Invalid init value"),
+        };
+
+        self.push_global_def(name, init);
+    }
+
+    pub fn build_func(&mut self, func: &FunctionData, prog: &Program) {
+        // Ignore function declaration.
+        if func.layout().entry_bb() == None {
+            return;
+        }
+
         self.reset_reg();
         self.build_func_meta(func);
 
@@ -57,11 +84,11 @@ impl RiscvBuilder {
                     self.build_sw("ra", size - 4, "sp");
                 }
                 entry = false;
-                self.build_block(node, func.dfg());
+                self.build_block(node, func.dfg(), prog);
             } else {
                 let name = func.dfg().bb(bb).name().as_ref().unwrap();
                 self.push_block(&name[1..]);
-                self.build_block(node, func.dfg());
+                self.build_block(node, func.dfg(), prog);
             }
         }
     }
@@ -76,10 +103,10 @@ impl RiscvBuilder {
         matches!(user_kind, ValueKind::Call(_))
     }
 
-    pub fn build_block(&mut self, node: &BasicBlockNode, dfg: &DataFlowGraph) {
+    pub fn build_block(&mut self, node: &BasicBlockNode, dfg: &DataFlowGraph, prog: &Program) {
         for &value in node.insts().keys() {
             // let dst = self.choose_dst(value, dfg);
-            let reg = self.build_inst(value, dfg, None);
+            let reg = self.build_inst(value, dfg, prog, None);
             if self.is_func_arg(value, dfg) {
                 let reg = reg.unwrap();
                 let imm = self.offset(value);
@@ -93,6 +120,7 @@ impl RiscvBuilder {
         &mut self,
         value: Value,
         dfg: &DataFlowGraph,
+        prog: &Program,
         dst: Option<Reg>,
     ) -> Option<Reg> {
         use ValueKind::*;
@@ -118,22 +146,41 @@ impl RiscvBuilder {
 
             Load(load) => {
                 let rd = self.alloc_reg(value, dst);
-                let imm = self.offset(load.src()) as i32;
-                self.build_lw(&rd, imm, "sp");
+                let src = load.src();
+                if dfg.values().contains_key(&src) {
+                    let imm = self.offset(src) as i32;
+                    self.build_lw(rd, imm, "sp");
+                } else {
+                    let src = prog.borrow_value(src);
+                    let name = src.name().as_ref().unwrap();
+                    let name = &name[1..];
+                    self.push_inst(Inst::La { rd, label: name.to_string() });
+                    self.build_lw(rd, 0, rd);
+                }
                 Some(rd)
             }
 
             Store(store) => {
-                let rs = self.query_or_build(store.value(), dfg, None);
-                let imm = self.offset(store.dest()) as i32;
-                self.build_sw(&rs, imm, "sp");
-                self.free_reg(store.value(), rs);
+                let rs = self.query_or_build(store.value(), dfg, prog, None);
+                let dst = store.dest();
+                if dfg.values().contains_key(&dst) {
+                    let imm = self.offset(store.dest()) as i32;
+                    self.build_sw(&rs, imm, "sp");
+                    self.free_reg(store.value(), rs);
+                } else {
+                    let dest = prog.borrow_value(store.dest());
+                    let name = dest.name().as_ref().unwrap();
+                    let name = &name[1..];
+                    self.push_inst(Inst::La { rd: "t0", label: name.to_string() });
+                    self.build_sw(rs, 0, "t0");
+                    self.free_reg(store.value(), rs);
+                }
                 None
             }
 
             Binary(binary) => {
-                let lhs = self.query_or_build(binary.lhs(), dfg, None);
-                let rhs = self.query_or_build(binary.rhs(), dfg, None);
+                let lhs = self.query_or_build(binary.lhs(), dfg, prog, None);
+                let rhs = self.query_or_build(binary.rhs(), dfg, prog, None);
                 let rd = self.alloc_reg(value, dst);
                 // println!("lhs: {lhs:?}, rhs: {rhs:?}, rd: {rd:?}\n");
                 match binary.op() {
@@ -179,7 +226,7 @@ impl RiscvBuilder {
             }
 
             Branch(branch) => {
-                let cond = self.query_or_build(branch.cond(), dfg, None);
+                let cond = self.query_or_build(branch.cond(), dfg, prog, None);
                 let get_name = |bb| {
                     let name = dfg.bb(bb).name().as_ref().unwrap();
                     name[1..].to_string()
@@ -232,7 +279,7 @@ impl RiscvBuilder {
 
             Return(ret) => {
                 if let Some(value) = ret.value() {
-                    let rs = self.query_or_build(value, dfg, None);
+                    let rs = self.query_or_build(value, dfg, prog, None);
                     self.push_inst(Inst::Mv { rd: "a0", rs });
                 }
                 if !self.is_leaf() {
@@ -245,7 +292,7 @@ impl RiscvBuilder {
                 // }
                 None
             }
-            _ => unreachable!(),
+            _ => panic!("Unexpected value kind {:?}", value_data.kind()),
         }
     }
 }
