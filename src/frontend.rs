@@ -13,13 +13,15 @@ use sem_analyzer::SemAnalyzer;
 lalrpop_util::lalrpop_mod!(parser, "/frontend/sysy.rs");
 
 impl Program {
-    pub fn from_c_text(prog: &str) -> Self {
+    /// Creates an AST from SysY program in ASCII text.
+    pub fn from_sysy_text(prog: &str) -> Self {
         ProgramParser::new()
             .parse(&prog)
             .expect("Parse error")
             .analyze_sem()
     }
 
+    /// Analyzes the semantics of input AST and returns the transformed AST.
     fn analyze_sem(mut self) -> Self {
         SemAnalyzer::run_on(&mut self);
         self

@@ -5,7 +5,6 @@
 mod backend;
 mod frontend;
 mod midend;
-pub mod utils;
 
 use frontend::Program;
 use std::env;
@@ -25,9 +24,9 @@ fn main() -> std::io::Result<()> {
     let mut output = fs::File::create(output).unwrap();
 
     let res = match &mode[..] {
-        "-koopa" => Program::from_c_text(&input).to_koopa_text(),
+        "-koopa" => Program::from_sysy_text(&input).to_koopa_text(),
         "-riscv" => {
-            let koopa = Program::from_c_text(&input).to_koopa_program();
+            let koopa = Program::from_sysy_text(&input).to_koopa_program();
             backend::riscv_text_from(&koopa)
         }
         _ => panic!("Unknown mode: {mode}"),

@@ -1,9 +1,12 @@
+//! Koopa text builder.
+
 mod build_from;
+mod token_generator;
 
 use crate::frontend::ast;
-use crate::utils::token_generator::TokenGenerator;
 use build_from::BuildFrom;
 use std::collections::{HashMap, VecDeque};
+use token_generator::TokenGenerator;
 
 struct LoopMeta {
     cond_label: String,
@@ -76,7 +79,7 @@ impl KoopaTextBuilder {
     }
 
     /// Peeks the next token with the given prefix, i.e.,
-    /// what will be returns if `make_token` is called with the same argument.
+    /// what will be returned if `make_token` is called with the same argument.
     fn peek_token(&mut self, name: &'static str) -> String {
         let gen = self
             .token_gen

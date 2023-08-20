@@ -63,6 +63,7 @@ pub trait BuildFrom<T> {
 
 impl BuildFrom<Program> for KoopaTextBuilder {
     fn build_from(&mut self, prog: &Program, _: bool) -> String {
+        // Declare library functions.
         push_text!(
             self,
             "\

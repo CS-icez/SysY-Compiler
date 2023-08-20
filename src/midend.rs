@@ -13,10 +13,12 @@ use koopa::ir::entities;
 use koopa_text_builder::KoopaTextBuilder;
 
 impl ast::Program {
+    /// Converts an AST to Koopa text.
     pub fn to_koopa_text(&self) -> String {
         KoopaTextBuilder::build(self)
     }
 
+    /// Converts an AST to Koopa in-memory program.
     pub fn to_koopa_program(&self) -> entities::Program {
         let text = self.to_koopa_text();
         Driver::from(text)
