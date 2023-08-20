@@ -1,11 +1,15 @@
+//! This module defines the grammar of the SysY language, described in EBNF.
+//! I adjusted the grammars specified in
+//! https://pku-minic.github.io/online-doc/#/misc-app-ref/sysy-spec
+//! for convenience, while maintaining equivalence.
 use super::ast::*;
 
 grammar;
 
 match {
-    r"\s*" => {},
-    r"//[^\n\r]*[\n\r]*" => {},
-    r"/\*([^*]|\*+[^/*])*\*+/" => {},
+    r"\s*" => {}, // Whitespace.
+    r"//[^\n\r]*[\n\r]*" => {}, // Line comment.
+    r"/\*([^*]|\*+[^/*])*\*+/" => {}, // Block comment.
     _
 }
 
@@ -20,19 +24,111 @@ Comma<T>: Vec<T> = {
     }
 };
 
-pub Program: Program = <CompUnit*> => Program(<>);
+/// Program ::= CompUnit {CompUnit}
+pub Program: Program = {
+    <CompUnit*> => Program(<>),
+};
 
+/// CompUnit ::= GlobalDecl | FuncDef
 CompUnit: CompUnit = {
     <GlobalDecl> => CompUnit::GlobalDecl(<>),
     <FuncDef> => CompUnit::FuncDef(<>),
 };
 
-FuncDef: FuncDef = <BType> <Ident> "(" <Comma<FuncFParam>> ")" <Block> => FuncDef(<>);
+// Terminals.
 
-FuncFParam: FuncFParam = <BType> <Ident> => FuncFParam(<>);
+Ident: String = r"[_a-zA-Z][_a-zA-Z0-9]*" => <>.to_string();
 
-Block: Block = "{" <BlockItem*> "}" => Block(<>);
+IntConst: i32 = {
+    r"[1-9][0-9]*" => i32::from_str_radix(<>, 10).unwrap(),
+    r"0[0-7]*" => i32::from_str_radix(<>, 8).unwrap(),
+    r"0[xX][0-9a-fA-F]+" => i32::from_str_radix(&<>[2..], 16).unwrap(),
+};
 
+// Variable declaration.
+
+/// GlobalDecl ::= Decl
+GlobalDecl: GlobalDecl = {
+    <Decl> => GlobalDecl(<>),
+};
+
+/// Decl ::= ConstDecl | VarDecl
+Decl: Decl = {
+    <ConstDecl> => Decl::ConstDecl(<>),
+    <VarDecl> => Decl::VarDecl(<>),
+};
+
+/// ConstDecl ::= "const" BType ConstDef {"," ConstDef} ";"
+ConstDecl: ConstDecl = {
+    "const" <BType> <Comma<ConstDef>> ";" => ConstDecl(<>),
+};
+
+/// BType ::= "int" | "void"
+BType: BType = {
+    "int" => BType::Int,
+    "void" => BType::Void,
+}
+
+/// ConstDef ::= IDENT "=" ConstInitVal
+ConstDef: ConstDef = {
+    <Ident> "=" <ConstInitVal> => ConstDef(<>),
+};
+
+/// ConstInitVal ::= ConstExp
+ConstInitVal: ConstInitVal = {
+    <ConstExp> => ConstInitVal(<>),
+};
+
+/// VarDecl ::= BType VarDef {"," VarDef} ";"
+VarDecl: VarDecl = {
+    <BType> <Comma<VarDef>> ";" => VarDecl(<>),
+};
+
+/// VarDef ::= IDENT | IDENT "=" InitVal
+VarDef: VarDef = {
+    <Ident> => VarDef::NoInit(<>),
+    <Ident> "=" <InitVal> => VarDef::Init(<>),
+};
+
+/// InitVal ::= Exp
+InitVal: InitVal = {
+    <Exp> => InitVal::Exp(<>),
+};
+
+// Function definition.
+
+/// FuncDef ::= BType IDENT "(" [FuncFParams] ")" Block
+/// FuncFParams ::= FuncFParam {"," FuncFParam}
+FuncDef: FuncDef = {
+    <BType> <Ident> "(" <Comma<FuncFParam>> ")" <Block> => FuncDef(<>),
+};
+
+/// FuncFParam ::= BType IDENT
+FuncFParam: FuncFParam = {
+    <BType> <Ident> => FuncFParam(<>),
+};
+
+/// Block ::= "{" {BlockItem} "}"
+Block: Block = {
+    "{" <BlockItem*> "}" => Block(<>),
+};
+
+/// BlockItem ::= Decl | Stmt
+BlockItem: BlockItem = {
+    <Decl> => BlockItem::Decl(<>),
+    <Stmt> => BlockItem::Stmt(<>),
+};
+
+// Statement.
+
+/// Stmt ::= LVal "=" Exp ";"
+///     | [Exp] ";"
+///     | Block
+///     | "if" "(" Exp ")" Stmt ["else" Stmt]
+///     | "while" "(" Exp ")" Stmt
+///     | "break" ";"
+///     | "continue" ";"
+///     | "return" Exp ";"
 Stmt: Stmt = {
     <SimpleStmt> => <>,
     "if" "(" <exp: Exp> ")" <stmt: Stmt> => Stmt::If(exp, Box::new(stmt), None),
@@ -42,6 +138,10 @@ Stmt: Stmt = {
     "while" "(" <exp: Exp> ")" <stmt: Stmt> => Stmt::While(exp, Box::new(stmt)),
 };
 
+// In a closed statement, every `if` must have an `else` branch.
+// Such grammar adjustment addresses the dangling-else problem by pairing
+// every `else` with the nearest `if`.
+// See also: https://en.wikipedia.org/wiki/Dangling_else
 ClosedStmt: Stmt = {
     <SimpleStmt> => <>,
     "if" "(" <exp: Exp> ")" <stmt: ClosedStmt> "else" <else_stmt: ClosedStmt> => Stmt::If(
@@ -50,6 +150,7 @@ ClosedStmt: Stmt = {
     "while" "(" <exp: Exp> ")" <stmt: ClosedStmt> => Stmt::While(exp, Box::new(stmt)),
 };
 
+// I defined this rule to avoid writing the same code twice.
 SimpleStmt: Stmt = {
     <LVal> "=" <Exp> ";" => Stmt::Assign(<>),
     ";" => Stmt::Empty,
@@ -60,36 +161,48 @@ SimpleStmt: Stmt = {
     "return" <Exp> ";" => Stmt::Return(<>),
 };
 
-Number: Number = <IntConst> => Number(<>);
+// Expression.
 
-Ident: String = r"[_a-zA-Z][_a-zA-Z0-9]*" => <>.to_string();
+/// Exp ::= LOrExp
+Exp: Exp = {
+     <LOrExp> => Exp(<>),
+};
 
-IntConst: i32 = {
-    r"[1-9][0-9]*" => i32::from_str_radix(<>, 10).unwrap(),
-    r"0[0-7]*" => i32::from_str_radix(<>, 8).unwrap(),
-    r"0[xX][0-9a-fA-F]+" => i32::from_str_radix(&<>[2..], 16).unwrap(),
-}
+/// LVal ::= IDENT
+LVal: LVal = {
+    <Ident> => LVal(<>),
+};
 
-Exp: Exp = <LOrExp> => Exp(<>);
-
+/// PrimaryExp ::= "(" Exp ")" | Number | LVal
 PrimaryExp: PrimaryExp = {
     "(" <exp: Exp> ")" => PrimaryExp::BracketedExp(Box::new(exp)),
     <Number> => PrimaryExp::Number(<>),
     <LVal> => PrimaryExp::LVal(<>),
 };
 
+/// Number ::= INT_CONST
+Number: Number = {
+    <IntConst> => Number(<>),
+};
+
+/// UnaryExp ::= PrimaryExp
+///     | IDENT "(" [FuncRParams] ")"
+///     | UnaryOp UnaryExp;
+/// FuncRParams ::= Exp {"," Exp}
 UnaryExp: UnaryExp = {
     <exp: PrimaryExp> => UnaryExp::Primary(Box::new(exp)),
     <Ident> "(" <Comma<Exp>> ")" => UnaryExp::FuncCall(<>),
     <op: UnaryOp> <exp: UnaryExp> => UnaryExp::OpUnary(op, Box::new(exp)),
 };
 
+/// UnaryOp ::= "+" | "-" | "!"
 UnaryOp: UnaryOp = {
     "+" => UnaryOp::Plus,
     "-" => UnaryOp::Minus,
     "!" => UnaryOp::Not,
 };
 
+/// MulExp ::= UnaryExp | MulExp MulOp UnaryExp
 MulExp: MulExp = {
     <exp: UnaryExp> => MulExp::Unary(Box::new(exp)),
     <exp: MulExp> <op: MulOp> <unary: UnaryExp> => MulExp::MulOpUnary(
@@ -97,12 +210,14 @@ MulExp: MulExp = {
     ),
 };
 
+/// MulOp ::= "*" | "/" | "%"
 MulOp: MulOp = {
     "*" => MulOp::Mul,
     "/" => MulOp::Div,
     "%" => MulOp::Rem,
 };
 
+/// AddExp ::= MulExp | AddExp AddOp MulExp
 AddExp: AddExp = {
     <exp: MulExp> => AddExp::Mul(Box::new(exp)),
     <exp: AddExp> <op: AddOp> <mul: MulExp> => AddExp::AddOpMul(
@@ -110,11 +225,13 @@ AddExp: AddExp = {
     ),
 }
 
+/// AddOp ::= "+" | "-"
 AddOp: AddOp = {
     "+" => AddOp::Add,
     "-" => AddOp::Sub,
 };
 
+/// RelExp ::= AddExp | RelExp RelOp AddExp
 RelExp: RelExp = {
     <exp: AddExp> => RelExp::Add(Box::new(exp)),
     <exp: RelExp> <op: RelOp> <add: AddExp> => RelExp::RelOpAdd(
@@ -122,6 +239,7 @@ RelExp: RelExp = {
     ),
 };
 
+/// RelOp ::= "<=" | "<" | ">=" | ">"
 RelOp: RelOp = {
     "<" => RelOp::Lt,
     "<=" => RelOp::Le,
@@ -129,6 +247,7 @@ RelOp: RelOp = {
     ">=" => RelOp::Ge,
 };
 
+/// EqExp ::= RelExp | EqExp EqOp RelExp
 EqExp: EqExp = {
     <exp: RelExp> => EqExp::Rel(Box::new(exp)),
     <exp: EqExp> <op: EqOp> <rel: RelExp> => EqExp::EqOpRel(
@@ -136,11 +255,13 @@ EqExp: EqExp = {
     ),
 };
 
+/// EqOp ::= "==" | "!="
 EqOp: EqOp = {
     "==" => EqOp::Eq,
     "!=" => EqOp::Ne,
 };
 
+/// LAndExp ::= EqExp | LAndExp "&&" EqExp
 LAndExp: LAndExp = {
     <exp: EqExp> => LAndExp::Eq(Box::new(exp)),
     <exp: LAndExp> "&&" <eq: EqExp> => LAndExp::LAndEq(
@@ -148,6 +269,7 @@ LAndExp: LAndExp = {
     ),
 };
 
+/// LOrExp ::= LAndExp | LOrExp "||" LAndExp
 LOrExp: LOrExp = {
     <exp: LAndExp> => LOrExp::LAnd(Box::new(exp)),
     <exp: LOrExp> "||" <land: LAndExp> => LOrExp::LOrLAnd(
@@ -155,38 +277,5 @@ LOrExp: LOrExp = {
     ),
 };
 
-GlobalDecl: GlobalDecl = <Decl> => GlobalDecl(<>);
-
-Decl: Decl = {
-    <ConstDecl> => Decl::ConstDecl(<>),
-    <VarDecl> => Decl::VarDecl(<>),
-};
-
-ConstDecl: ConstDecl = "const" <BType> <Comma<ConstDef>> ";" => ConstDecl(<>);
-
-BType: BType = {
-    "int" => BType::Int,
-    "void" => BType::Void,
-}
-
-ConstDef: ConstDef = <Ident> "=" <ConstInitVal> => ConstDef(<>);
-
-ConstInitVal: ConstInitVal = <ConstExp> => ConstInitVal(<>);
-
-VarDecl: VarDecl = <BType> <Comma<VarDef>> ";" => VarDecl(<>);
-
-VarDef: VarDef = {
-    <Ident> => VarDef::NoInit(<>),
-    <Ident> "=" <InitVal> => VarDef::Init(<>),
-};
-
-InitVal: InitVal = <Exp> => InitVal::Exp(<>);
-
-BlockItem: BlockItem = {
-    <Decl> => BlockItem::Decl(<>),
-    <Stmt> => BlockItem::Stmt(<>),
-};
-
-LVal: LVal = <Ident> => LVal(<>);
-
+/// ConstExp ::= Exp
 ConstExp: ConstExp = <Exp> => ConstExp(<>);

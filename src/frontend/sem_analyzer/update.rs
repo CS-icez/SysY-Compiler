@@ -1,5 +1,9 @@
-use crate::frontend::ast::{self, *};
+//! Update AST nodes with semantic information.
+//! For now, all it does is replacing identifiers
+//! with their mangled names or constant value.
+
 use super::SemAnalyzer;
+use crate::frontend::ast::{self, *};
 
 macro_rules! impl_update_binary_op {
     ($T:ty, $arm1:tt, $arm2:tt, var) => {
@@ -70,7 +74,7 @@ impl Update<UnaryExp> for SemAnalyzer {
                 for arg in exps {
                     self.update(arg);
                 }
-            },
+            }
             OpUnary(_, bexp) => self.update(bexp.as_mut()),
         }
     }
@@ -88,7 +92,7 @@ impl Update<InitVal> for SemAnalyzer {
         use InitVal::*;
         match init_val {
             Exp(exp) => self.update(exp),
-            Number(_) => {}
+            Number(_) => panic!("Unexpected arm"),
         }
     }
 }
@@ -96,6 +100,6 @@ impl Update<InitVal> for SemAnalyzer {
 impl Update<LVal> for SemAnalyzer {
     fn update(&mut self, lval: &mut LVal) {
         let ident = &mut lval.0;
-        *ident = self.name(&ident[..]).to_string();
+        *ident = self.to_mangled(ident);
     }
 }

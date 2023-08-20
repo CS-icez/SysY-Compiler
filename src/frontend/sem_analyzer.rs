@@ -1,87 +1,108 @@
-use std::collections::{VecDeque, HashMap};
-use symtab::{Symbol::{self, *}, SymTab};
-use super::ast::*;
-use analyze_sem::Analyze;
+//! Semantic analyzer.
 
-mod symtab;
 mod analyze_sem;
 mod eval;
+mod symtab;
 mod update;
+
+use super::ast::*;
+use analyze_sem::Analyze;
+use std::collections::{HashMap, VecDeque};
+use symtab::{
+    SymTab,
+    Symbol::{self, *},
+};
 
 #[derive(Default)]
 pub struct SemAnalyzer {
-    symtabs: VecDeque<SymTab>,
+    symtabs: VecDeque<SymTab>, // Actually a stack, Rust std didn't provide it.
     ident_cnt: HashMap<String, u32>,
 }
 
 impl SemAnalyzer {
-    pub fn new() -> Self {
+    /// Run semantic analysis on the given program.
+    pub fn run_on(prog: &mut Program) {
+        Self::new().analyze(prog);
+    }
+
+    /// Creates a new semantic analyzer.
+    fn new() -> Self {
         Self {
             symtabs: VecDeque::new(),
             ident_cnt: HashMap::new(),
         }
     }
 
-    pub fn enter_scope(&mut self) {
+    /// Enters a new scope.
+    fn enter_scope(&mut self) {
         self.symtabs.push_front(SymTab::new());
     }
 
-    pub fn exit_scope(&mut self) {
+    /// Exits the current scope.
+    fn exit_scope(&mut self) {
         self.symtabs.pop_front();
     }
 
-    fn symbol(&self, name: &str) -> &Symbol {
+    /// Traverses the symbol table stack and returns the symbol
+    /// corresponding to the given identifier.
+    fn symbol(&self, ident: &str) -> &Symbol {
         for table in &self.symtabs {
-            if let Some(symbol) = table.get(name) {
+            if let Some(symbol) = table.get(ident) {
                 return symbol;
             }
         }
-        panic!("Symbol {name} not found");
+        panic!("Symbol {ident} not found");
     }
 
-    pub fn run(&mut self, prog: &mut Program) {
-        self.analyze(prog);
-        *self = Default::default();
-    }
-
-    pub fn name(&self, name: &str) -> &str {
-        match self.symbol(name) {
+    /// Returns the mangled name of the given identifier.
+    fn mangled_name(&self, ident: &str) -> &str {
+        match self.symbol(ident) {
             Int { token } => token,
             ConstInt { token, .. } => token,
         }
     }
 
-    pub fn value(&self, name: &str) -> i32 {
-        match self.symbol(name) {
-            ConstInt { value, .. } => *value,
-            _ => panic!("Get value of non-const symbol {name}"),
+    /// Convert the identifier to its mangled name.
+    /// `to_mangled(ident)` is equivalent to `mangled_name(ident).to_string()`.
+    fn to_mangled(&self, ident: &str) -> String {
+        self.mangled_name(&ident).to_string()
+    }
+
+    /// Returns the value of the given identifier,
+    /// which must be a constant integer.
+    fn value(&self, ident: &str) -> i32 {
+        if let ConstInt { value, .. } = self.symbol(ident) {
+            return *value;
+        } else {
+            panic!("Get value of non-const symbol {ident}");
         }
     }
 
-    pub fn is_const(&self, name: &str) -> bool {
-        match self.symbol(name) {
-            ConstInt { .. } => true,
-            _ => false,
-        }
-    }
-    
-    pub fn insert_int(&mut self, name: String) {
-        let cnt = self.ident_cnt.entry(name.clone()).or_default();
-        let token = format!("@{name}_{cnt}");
-        *cnt += 1;
-        self.symtabs.front_mut().unwrap().insert(
-            name,
-            Int { token },
-        );
+    /// Returns whether the given identifier is a constant integer.
+    fn is_const(&self, ident: &str) -> bool {
+        matches!(self.symbol(ident), ConstInt { .. })
     }
 
-    pub fn insert_const_int(&mut self, name: String, value: i32) {
-        let cnt = self.ident_cnt.entry(name.clone()).or_default();
-        let token = format!("@{name}_{cnt}");
+    /// Inserts an integer symbol into the symbol table of the current scope.
+    fn insert_int(&mut self, ident: String) {
+        let cnt = self.ident_cnt.entry(ident.clone()).or_default();
+        let token = format!("@{ident}_{cnt}");
         *cnt += 1;
-        self.symtabs.front_mut().unwrap().insert(
-            name,
-            ConstInt { token, value }
-        );
+        self.symtabs
+            .front_mut()
+            .unwrap()
+            .insert(ident, Int { token });
+    }
+
+    /// Inserts a constant integer symbol into the symbol table
+    /// of the current scope.
+    fn insert_const_int(&mut self, ident: String, value: i32) {
+        let cnt = self.ident_cnt.entry(ident.clone()).or_default();
+        let token = format!("@{ident}_{cnt}");
+        *cnt += 1;
+        self.symtabs
+            .front_mut()
+            .unwrap()
+            .insert(ident, ConstInt { token, value });
     }
 }

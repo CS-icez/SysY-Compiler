@@ -1,6 +1,10 @@
-use crate::frontend::ast::*;
-use super::SemAnalyzer;
+//! Evaluation of constant expressions.
 
+use super::SemAnalyzer;
+use crate::frontend::ast::*;
+
+// This saves me from writing a lot of similar code.
+// I really hope lalrpop could support defining rule precedence.
 macro_rules! impl_eval_binary_op {
     ($T:ty, $arm1:tt, $arm2:tt, $clo:tt) => {
         impl Eval<$T> for SemAnalyzer {
@@ -45,7 +49,7 @@ pub trait Eval<T> {
 impl Eval<ConstInitVal> for SemAnalyzer {
     fn eval(&self, target: &ConstInitVal) -> i32 {
         self.eval(&target.0)
-    } 
+    }
 }
 
 impl Eval<ConstExp> for SemAnalyzer {
@@ -123,18 +127,16 @@ impl_eval_binary_op!(EqExp, Rel, EqOpRel, EqOp,
         Ne => (|x, y| (x != y) as i32),
 );
 
-impl_eval_binary_op!(LAndExp, Eq, LAndEq,
-    (|x, y| (x != 0 && y != 0) as i32));
+impl_eval_binary_op!(LAndExp, Eq, LAndEq, (|x, y| (x != 0 && y != 0) as i32));
 
-impl_eval_binary_op!(LOrExp, LAnd, LOrLAnd,
-    (|x, y| (x != 0 || y != 0) as i32));
+impl_eval_binary_op!(LOrExp, LAnd, LOrLAnd, (|x, y| (x != 0 || y != 0) as i32));
 
 impl Eval<InitVal> for SemAnalyzer {
     fn eval(&self, target: &InitVal) -> i32 {
         use InitVal::*;
         match target {
             Exp(exp) => self.eval(exp),
-            Number(num) => self.eval(num),
+            Number(_) => panic!("Unexpected arm"),
         }
     }
 }

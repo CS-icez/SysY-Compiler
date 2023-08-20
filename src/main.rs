@@ -1,15 +1,19 @@
-use backend::riscv_text_from;
-use frontend::Program;
-use std::env;
-use std::fs;
-use std::io::Write;
+//! We assume the input program is both syntactically and semantically correct.
+//! Otherwise, anything could happen, probably just panic somewhere.
+//! This applies to all modules in this crate.
 
 mod backend;
 mod frontend;
 mod midend;
 pub mod utils;
 
+use frontend::Program;
+use std::env;
+use std::fs;
+use std::io::Write;
+
 fn main() -> std::io::Result<()> {
+    // Assume we got correct command line arguments.
     let mut args = env::args();
     let _cmd = args.next().unwrap();
     let mode = args.next().unwrap();
@@ -21,15 +25,12 @@ fn main() -> std::io::Result<()> {
     let mut output = fs::File::create(output).unwrap();
 
     let res = match &mode[..] {
-        "-koopa" => {
-            Program::from_c_text(&input[..])
-                .to_koopa_text()
-        }
+        "-koopa" => Program::from_c_text(&input).to_koopa_text(),
         "-riscv" => {
-            riscv_text_from(&Program::from_c_text(&input[..])
-                .to_koopa_program())
+            let koopa = Program::from_c_text(&input).to_koopa_program();
+            backend::riscv_text_from(&koopa)
         }
-        _ => unreachable!(),
+        _ => panic!("Unknown mode: {mode}"),
     };
 
     output.write_all(res.as_bytes())?;

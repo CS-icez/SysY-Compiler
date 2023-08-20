@@ -1,5 +1,11 @@
-use crate::frontend::ast::*;
+//! This module defines the trait `Analyze` and its implementations.
+//! Semantic analysis is done by traversing the AST
+//! and performing AST transformations.
+
+use super::eval::Eval;
+use super::update::Update;
 use super::SemAnalyzer;
+use crate::frontend::ast::*;
 
 pub trait Analyze<T> {
     fn analyze(&mut self, target: &mut T);
@@ -7,10 +13,9 @@ pub trait Analyze<T> {
 
 impl Analyze<Program> for SemAnalyzer {
     fn analyze(&mut self, prog: &mut Program) {
-        self.enter_scope();
-        for comp_unit in &mut prog.0 {
-            self.analyze(comp_unit);
-        }
+        self.enter_scope(); // Global scope.
+        prog.0.iter_mut()
+            .for_each(|comp_unit| self.analyze(comp_unit));
         self.exit_scope();
     }
 }
@@ -27,10 +32,12 @@ impl Analyze<CompUnit> for SemAnalyzer {
 
 impl Analyze<FuncDef> for SemAnalyzer {
     fn analyze(&mut self, func_def: &mut FuncDef) {
-        for param in &mut func_def.2 {
+        // Record and update parameters.
+        func_def.2.iter_mut().for_each(|param| {
             self.insert_int(param.1.clone());
-            param.1 = self.name(&param.1[..]).to_string();
-        }
+            param.1 = self.to_mangled(&param.1);
+        });
+        // Analyze function body.
         self.analyze(&mut func_def.3);
     }
 }
@@ -38,16 +45,14 @@ impl Analyze<FuncDef> for SemAnalyzer {
 impl Analyze<Block> for SemAnalyzer {
     fn analyze(&mut self, block: &mut Block) {
         self.enter_scope();
-        for block_item in &mut block.0 {
-            self.analyze(block_item);
-        }
+        block.0.iter_mut()
+            .for_each(|block_item| self.analyze(block_item));
         self.exit_scope();
     }
 }
 
 impl Analyze<Stmt> for SemAnalyzer {
     fn analyze(&mut self, stmt: &mut Stmt) {
-        use super::update::Update;
         use Stmt::*;
         match stmt {
             Assign(lval, exp) => {
@@ -79,7 +84,6 @@ impl Analyze<GlobalDecl> for SemAnalyzer {
     fn analyze(&mut self, global_decl: &mut GlobalDecl) {
         use Decl::*;
         use VarDef::*;
-        use super::eval::Eval;
         match &mut global_decl.0 {
             ConstDecl(const_decl) => self.analyze(const_decl),
             VarDecl(var_decl) => {
@@ -87,11 +91,11 @@ impl Analyze<GlobalDecl> for SemAnalyzer {
                     match var_def {
                         NoInit(name) => {
                             self.insert_int(name.to_string());
-                            *name = self.name(&name[..]).to_string();
+                            *name = self.to_mangled(name);
                         }
                         Init(name, init_val) => {
                             self.insert_int(name.to_string());
-                            *name = self.name(&name[..]).to_string();
+                            *name = self.to_mangled(name);
                             let value = self.eval(init_val);
                             *init_val = InitVal::Number(Number(value));
                         }
@@ -114,15 +118,13 @@ impl Analyze<Decl> for SemAnalyzer {
 
 impl Analyze<ConstDecl> for SemAnalyzer {
     fn analyze(&mut self, const_decl: &mut ConstDecl) {
-        for const_def in &mut const_decl.1 {
-            self.analyze(const_def);
-        }
+        const_decl.1.iter_mut()
+            .for_each(|const_def| self.analyze(const_def));
     }
 }
 
 impl Analyze<ConstDef> for SemAnalyzer {
     fn analyze(&mut self, const_def: &mut ConstDef) {
-        use super::eval::Eval;
         let name = const_def.0.clone();
         let value = self.eval(&const_def.1);
         self.insert_const_int(name, value);
@@ -130,26 +132,26 @@ impl Analyze<ConstDef> for SemAnalyzer {
 }
 
 impl Analyze<VarDecl> for SemAnalyzer {
+    // Local variable declaration.
     fn analyze(&mut self, var_decl: &mut VarDecl) {
-        for var_def in &mut var_decl.1 {
-            self.analyze(var_def);
-        }
+        var_decl.1.iter_mut()
+            .for_each(|var_def| self.analyze(var_def));
     }
 }
 
 impl Analyze<VarDef> for SemAnalyzer {
+    // Local variable definition.
     fn analyze(&mut self, var_def: &mut VarDef) {
-        use super::update::Update;
         use VarDef::*;
         match var_def {
             NoInit(name) => {
                 self.insert_int(name.to_string());
-                *name = self.name(&name[..]).to_string();
+                *name = self.to_mangled(name);
             }
             Init(name, init_val) => {
                 self.insert_int(name.to_string());
                 self.update(init_val);
-                *name = self.name(&name[..]).to_string();
+                *name = self.to_mangled(name);
             }
         }
     }
