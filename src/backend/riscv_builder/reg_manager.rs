@@ -1,8 +1,10 @@
-use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
+use std::collections::HashMap;
+use koopa::ir::entities::Value;
 use super::riscv::Reg;
 
 pub struct RegManager {
-    bitmap: [AtomicBool; Self::REG_NUM],
+    reg2val: [Option<Value>; Self::REG_NUM],
+    val2reg: HashMap<Value, Reg>,
 }
 
 impl RegManager {
@@ -13,6 +15,8 @@ impl RegManager {
         "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7",
         "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6",
     ];
+    // Hope this is fine. Koopa library didn't provide a constructor.
+    const NULL_VAL: Value = unsafe { std::mem::transmute(u32::MAX) };
 
     fn reg2num(reg: Reg) -> usize {
         match reg {
@@ -32,61 +36,126 @@ impl RegManager {
     }
 
     pub fn new() -> Self {
-        const ALLOCATED: AtomicBool = AtomicBool::new(true);
-        let bitmap = [ALLOCATED; Self::REG_NUM];
+        let mut arr = [Some(Self::NULL_VAL); Self::REG_NUM];
         for i in 6..=7 {
-            bitmap[i].store(false, Relaxed);
+            arr[i] = None;
         }
-        for i in 10..=17 {
-            bitmap[i].store(false, Relaxed);
+        for i in 9..=31 {
+            arr[i] = None;
         }
-        for i in 28..=31 {
-            bitmap[i].store(false, Relaxed);
+        RegManager {
+            reg2val: arr,
+            val2reg: HashMap::new()
         }
-        RegManager { bitmap }
     }
 
-    pub fn alloc(&self, reg: Option<Reg>) -> Reg {
-        if let Some(reg) = reg {
-            // println!("alloc: {reg}");
-            let bit = &self.bitmap[Self::reg2num(&reg)];
-            assert_eq!(bit.load(Relaxed), false);
-            bit.store(true, Relaxed);
-            return reg;
-        } else {
-            for i in 0..self.bitmap.len() {
-                let bit = &self.bitmap[i];
-                if bit.load(Relaxed) == false {
-                    bit.store(true, Relaxed);
-                    // println!("alloc: {}", Self::REG_NAME[i]);
-                    return Self::REG_NAME[i];
-                }
+    // When `reg` is provided but not equal to the returned register `res`,
+    // it means a move from `reg` to `res` happened.
+    pub fn alloc(&mut self, val: Value, reg: Option<Reg>) -> Reg {
+        println!("alloc: {val:?} to {reg:?}\n");
+        assert!(self.val2reg.get(&val) == None, "Value already allocated");
+        if let Some(reg) = reg { // Required register is specified.
+            if reg == "x0" {
+                return "x0";
             }
-            panic!("All registers allocated!");
+            let idx = Self::reg2num(reg);
+            assert_eq!(self.reg2val[idx], None, "Register already allocated");
+            self.reg2val[idx] = Some(val);
+            self.val2reg.insert(val, reg);
+            return reg;
+        } else { // Any register is ok.
+            let f = |i: usize| {
+                if self.reg2val[i] == None {
+                    Some(i)
+                } else {
+                    None
+                }
+            };
+
+            let mut range1 = 6..=7; // t1, t2
+            let mut range2 = 9..=9; // s1
+            let mut range3 = 18..=31; // s2-s11, t3-t6
+
+            let idx = range1.find_map(f).or_else(|| {
+                range2.find_map(f).or_else(|| {
+                    range3.find_map(f)
+                })
+            }).expect("All registers allocated");
+            self.reg2val[idx] = Some(val);
+            self.val2reg.insert(val, Self::REG_NAME[idx]);
+            return Self::REG_NAME[idx];
         }
     }
 
-    pub fn free(&self, reg: Reg) {
-        // println!("free: {reg}");
-        if reg == "x0" {
-            return;
+    // The return value indicates if swap happens.
+    pub fn move_to(&mut self, old: Reg, new: Reg) -> bool {
+        if old == new {
+            return false;
         }
-        let i = Self::reg2num(reg);
-        assert_eq!(self.bitmap[i].load(Relaxed), true);
-        self.bitmap[i].store(false, Relaxed);
+        let iold = Self::reg2num(old);
+        let inew = Self::reg2num(new);
+        let Some(vold) = self.reg2val[iold] else {
+            panic!("Move from free register");
+        };
+        match self.reg2val[inew] {
+            None => {
+                self.reg2val[inew] = Some(vold);
+                self.reg2val[iold] = None;
+                self.val2reg.insert(vold, new);
+                false
+            }
+            Some(vnew) => {
+                self.reg2val[inew] = Some(vold);
+                self.reg2val[iold] = Some(vnew);
+                self.val2reg.insert(vold, new);
+                self.val2reg.insert(vnew, old);
+                true
+            }
+        }
+    }
+
+    pub fn reg(&self, val: Value) -> Reg {
+        self.val2reg.get(&val).expect("Value not associated with register")
     }
 
     #[allow(dead_code)]
-    pub fn reset(&self) {
-        for i in 6..=7 {
-            self.bitmap[i].store(false, Relaxed);
+    pub fn value(&self, reg: Reg) -> Value {
+        let idx = Self::reg2num(reg);
+        let Some(val) = self.reg2val[idx] else {
+            panic!("Register not associated with value");
+        };
+        val
+    }
+
+    pub fn free(&mut self, val: Value, reg: Reg) {
+        println!("free: {val:?} from {reg:?}\n");
+        self.val2reg.remove(&val);
+        // You may free `x0` whenever you like.
+        if reg == "x0" {
+            return;
         }
-        for i in 10..=17 {
-            self.bitmap[i].store(false, Relaxed);
-        }
-        for i in 28..=31 {
-            self.bitmap[i].store(false, Relaxed);
-        }
+        let idx = Self::reg2num(reg);
+        let Some(val1) = self.reg2val[idx] else {
+            panic!("Double free on register {reg}");
+        };
+        assert_eq!(val, val1, "Free on unmatched pair");
+        self.reg2val[idx] = None;
+    }
+
+    #[allow(dead_code)]
+    pub fn is_free(&mut self, reg: Reg) -> bool {
+        let idx = Self::reg2num(reg);
+        self.reg2val[idx] == None
+    }
+
+    pub fn reset(&mut self) {
+        *self = Self::new();
+    }
+
+    /// Returns all the allocated registers, collected in a `Vec`.
+    pub fn regs(&self) -> Vec<Reg> {
+        let f = |reg:  &Reg| *reg;
+        self.val2reg.values().map(f).collect()
     }
 }
 

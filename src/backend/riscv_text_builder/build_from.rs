@@ -23,10 +23,12 @@ impl BuildFrom<Program> for RiscvTextBuilder {
 
 impl BuildFrom<Func> for RiscvTextBuilder {
     fn build_from(&mut self, func: &Func) {
+        push_text!(self, "{TAB}.text\n");
         push_text!(self, "{TAB}.globl {}\n", func.name);
         for block in &func.blocks {
             self.build_from(block);
         }
+        push_text!(self, "\n");
     }
 }
 

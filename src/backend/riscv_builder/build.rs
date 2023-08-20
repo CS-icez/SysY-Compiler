@@ -1,5 +1,5 @@
-use koopa::ir::entities;
-use koopa::ir::layout;
+use koopa::ir::entities::*;
+use koopa::ir::layout::*;
 use koopa::ir::dfg::DataFlowGraph;
 use crate::backend::riscv::{Inst, Reg};
 use super::RiscvBuilder;
@@ -23,18 +23,26 @@ macro_rules! push_inst {
 }
 
 impl RiscvBuilder {
-    pub fn build_prog(&mut self, prog: &entities::Program) {
+    pub fn build_prog(&mut self, prog: &Program) {
         for &handle in prog.func_layout() {
             let func = prog.func(handle);
+            let name = &func.name()[1..];
+            self.record_func_name(handle, name);
             self.build_func(func);
         }
     }
 
-    pub fn build_func(&mut self, func: &entities::FunctionData) {
+    pub fn build_func(&mut self, func: &FunctionData) {
+        self.reset_reg();
         self.build_func_meta(func);
 
         let func_name = &func.name()[1..];
         self.push_func(func_name);
+
+        const REGS: [Reg; 8] = ["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7"];
+        for (i, &value) in func.params().iter().take(8).enumerate() {
+            self.alloc_reg(value, Some(REGS[i]));
+        }
         
         let size = self.frame_size() as i32;
 
@@ -45,33 +53,49 @@ impl RiscvBuilder {
                 let name = func.name();
                 self.push_block(&name[1..]);
                 self.build_addi("sp", "sp", -size);
+                if !self.is_leaf() {
+                    self.build_sw("ra", size - 4, "sp");
+                }
                 entry = false;
+                self.build_block(node, func.dfg());
             } else {
                 let name = func.dfg().bb(bb).name().as_ref().unwrap();
                 self.push_block(&name[1..]);
+                self.build_block(node, func.dfg());
             }
-            self.build_block(node, func.dfg());
         }
     }
 
-    pub fn build_block(
-        &mut self,
-        node: &layout::BasicBlockNode,
-        dfg: &DataFlowGraph
-    ) {
+    fn is_func_arg(&self, value: Value, dfg: &DataFlowGraph) -> bool {
+        let used_by = dfg.value(value).used_by();
+        if used_by.len() != 1 {
+            return false;
+        }
+        let &user = used_by.iter().next().unwrap();
+        let user_kind = dfg.value(user).kind();
+        matches!(user_kind, ValueKind::Call(_))
+    }
+
+    pub fn build_block(&mut self, node: &BasicBlockNode, dfg: &DataFlowGraph) {
         for &value in node.insts().keys() {
-            // println!("build_block call: {value:?}");
-            self.build_inst(value, dfg, None);
+            // let dst = self.choose_dst(value, dfg);
+            let reg = self.build_inst(value, dfg, None);
+            if self.is_func_arg(value, dfg) {
+                let reg = reg.unwrap();
+                let imm = self.offset(value);
+                self.build_sw(reg, imm as i32, "sp");
+                self.free_reg(value, reg);
+            }
         }
     }
 
     pub fn build_inst(
         &mut self,
-        value: entities::Value,
+        value: Value,
         dfg: &DataFlowGraph,
         dst: Option<Reg>,
     ) -> Option<Reg> {
-        use entities::ValueKind::*;
+        use ValueKind::*;
         use koopa::ir::BinaryOp::*;
 
         // println!("build_inst: {value:?}");
@@ -94,26 +118,24 @@ impl RiscvBuilder {
 
             Load(load) => {
                 let rd = self.alloc_reg(value, dst);
-                let ident = dfg.value(load.src()).name().as_ref().unwrap();
-                let imm = self.offset(ident) as i32;
+                let imm = self.offset(load.src()) as i32;
                 self.build_lw(&rd, imm, "sp");
                 Some(rd)
             }
 
             Store(store) => {
-                let rs = self.query_or_build(store.value(), dfg);
-                let ident = dfg.value(store.dest()).name().as_ref().unwrap();
-                let imm = self.offset(ident) as i32;
+                let rs = self.query_or_build(store.value(), dfg, None);
+                let imm = self.offset(store.dest()) as i32;
                 self.build_sw(&rs, imm, "sp");
-                self.free_reg(store.value());
+                self.free_reg(store.value(), rs);
                 None
             }
 
             Binary(binary) => {
-                // println!("call build_inst: {binary:#?}");
-                let lhs = self.query_or_build(binary.lhs(), dfg);
-                let rhs = self.query_or_build(binary.rhs(), dfg);
+                let lhs = self.query_or_build(binary.lhs(), dfg, None);
+                let rhs = self.query_or_build(binary.rhs(), dfg, None);
                 let rd = self.alloc_reg(value, dst);
+                // println!("lhs: {lhs:?}, rhs: {rhs:?}, rd: {rd:?}\n");
                 match binary.op() {
                     NotEq => {
                         if lhs != "x0" {
@@ -151,13 +173,13 @@ impl RiscvBuilder {
                     Xor => push_inst!(self, Inst::Xor, Binary, rd, rhs, lhs),
                     _ => unreachable!()
                 }
-                self.free_reg(binary.lhs());
-                self.free_reg(binary.rhs());
-                Some(rhs)
+                self.free_reg(binary.lhs(), lhs);
+                self.free_reg(binary.rhs(), rhs);
+                Some(rd)
             }
 
             Branch(branch) => {
-                let cond = self.query_or_build(branch.cond(), dfg);
+                let cond = self.query_or_build(branch.cond(), dfg, None);
                 let get_name = |bb| {
                     let name = dfg.bb(bb).name().as_ref().unwrap();
                     name[1..].to_string()
@@ -171,7 +193,7 @@ impl RiscvBuilder {
                 self.push_inst(Inst::J {
                     label: true_bb_name,
                 });
-                self.free_reg(branch.cond());
+                self.free_reg(branch.cond(), cond);
                 None
             }
 
@@ -183,17 +205,44 @@ impl RiscvBuilder {
                 None
             }
 
+            Call(call) => {
+                self.pass_args(call.args(), dfg);
+                self.save_regs();
+                let label = self.func_name(call.callee());
+                self.push_inst(Inst::Call { label: label.to_string() });
+                self.restore_regs();
+                if !value_data.used_by().is_empty() {
+                    let rd = self.alloc_reg(value, None);
+                    self.push_inst(Inst::Mv { rd, rs: "a0" });
+                    Some(rd)
+                    // let a0 = self.alloc_reg(value, Some("a0"));
+                    // let rd = self.choose_dst(value, dfg);
+                    // if rd != Some("a0") {
+                    //     self.free_reg(value, a0);
+                    //     let rd = self.alloc_reg(value, rd);
+                    //     self.push_inst(Inst::Mv { rd, rs: "a0" });
+                    //     Some(rd)
+                    // } else {
+                    //     rd
+                    // }
+                } else {
+                    None
+                }
+            }
+
             Return(ret) => {
                 if let Some(value) = ret.value() {
-                    let a0 = "a0";
-                    // assert!(dst == None || dst.as_ref().unwrap() == &a0);
-                    let rs = self.query_or_build(value, dfg);
-                    if rs != a0 {
-                        self.push_inst(Inst::Mv { rd: a0, rs  });
-                    }
+                    let rs = self.query_or_build(value, dfg, None);
+                    self.push_inst(Inst::Mv { rd: "a0", rs });
+                }
+                if !self.is_leaf() {
+                    self.build_lw("ra", self.frame_size() as i32 - 4, "sp");
                 }
                 self.build_addi("sp", "sp", self.frame_size() as i32);
                 self.push_inst(Inst::Ret);
+                // if let Some(value) = ret.value() {
+                //     self.free_reg(value, "a0");
+                // }
                 None
             }
             _ => unreachable!(),

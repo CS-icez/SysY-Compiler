@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use koopa::ir::entities;
+use koopa::ir::entities::{self, Value};
 use reg_manager::RegManager;
 use func_meta::FuncMeta;
 use super::riscv::{self, Reg};
@@ -14,10 +14,7 @@ pub struct RiscvBuilder {
     prog: riscv::Program,
     reg_mgr: RegManager,
     func_meta: FuncMeta,
-    inst2reg: HashMap<entities::Value, Reg>,
-    // then_label_gen: TokenGenerator,
-    // else_label_gen: TokenGenerator,
-    // endif_label_gen: TokenGenerator,
+    func_name: HashMap<entities::Function, String>,
 }
 
 impl RiscvBuilder {
@@ -25,11 +22,8 @@ impl RiscvBuilder {
         Self {
             prog: riscv::Program::new(),
             reg_mgr: RegManager::new(),
-            // then_label_gen: TokenGenerator::new("then_"),
-            // else_label_gen: TokenGenerator::new("else_"),
-            // endif_label_gen: TokenGenerator::new("endif_"),
             func_meta: FuncMeta::new(),
-            inst2reg: HashMap::new(),
+            func_name: HashMap::new(),
         }
     }
 
@@ -41,32 +35,32 @@ impl RiscvBuilder {
         res
     }
 
-    // fn make_token(&self) -> String {
-    //     self.else_label_gen.generate()
-    // }
-
-    fn alloc_reg(&mut self, inst: entities::Value, reg: Option<Reg>) -> Reg {
-        let reg = self.reg_mgr.alloc(reg);
-        self.inst2reg.insert(inst, reg);
-        reg
-    }
-
-    fn query_inst(&self, inst: entities::Value) -> Reg {
-        self.inst2reg.get(&inst)
-            .expect("Instruction not allocated to register")
+    fn alloc_reg(&mut self, inst: Value, reg: Option<Reg>) -> Reg {
+        let mut res = self.reg_mgr.alloc(inst, reg);
+        match reg {
+            Some(r) if r != res => {
+                self.push_inst(riscv::Inst::Mv { rd: res, rs: r });
+                res = r;
+            }
+            _ => {}
+        }
+        res
     }
 
     #[allow(dead_code)]
-    fn replace_reg_owner(&mut self, old_inst: entities::Value, new_inst: entities::Value) {
-        let reg = *self.inst2reg.get(&old_inst).unwrap();
-        self.inst2reg.remove(&old_inst);
-        self.inst2reg.insert(new_inst, reg);
+    fn replace_reg_owner(&mut self, old: Value, new: Value) {
+        let reg = self.reg_mgr.reg(old);
+        self.reg_mgr.free(old, reg);
+        self.reg_mgr.alloc(new, Some(reg));
     }
 
-    fn free_reg(&mut self, inst: entities::Value) {
+    fn free_reg(&mut self, inst: Value, reg: Reg) {
         // println!("free_reg: {inst:?}");
-        let reg = self.inst2reg.remove(&inst).unwrap_or("x0");
-        self.reg_mgr.free(reg);
+        self.reg_mgr.free(inst, reg);
+    }
+
+    fn reset_reg(&mut self) {
+        self.reg_mgr.reset();
     }
 
     fn build_func_meta(&mut self, func: &entities::FunctionData) {
@@ -77,8 +71,24 @@ impl RiscvBuilder {
         self.func_meta.frame_size()
     }
 
-    fn offset(&self, name: &str) -> u32 {
-        self.func_meta.offset(name)
+    fn offset(&self, value: Value) -> u32 {
+        self.func_meta.offset(value)
+    }
+
+    fn is_leaf(&self) -> bool {
+        self.func_meta.is_leaf()
+    }
+
+    fn arg_offset(&self) -> u32 {
+        self.func_meta.arg_offset()
+    }
+
+    fn record_func_name(&mut self, func: entities::Function, name: &str) {
+        self.func_name.insert(func, name.to_string());
+    }
+
+    fn func_name(&self, func: entities::Function) -> &str {
+        self.func_name.get(&func).unwrap()
     }
 
     fn back_func_mut(&mut self) -> &mut riscv::Func {
