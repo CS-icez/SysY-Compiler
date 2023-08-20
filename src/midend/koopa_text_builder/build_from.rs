@@ -1,8 +1,15 @@
-use crate::frontend::ast::*;
-use super::KoopaTextBuilder;
+//! This module implements the `BuildFrom` trait for `KoopaTextBuilder`.
+//! Koopa text generating is done by traversing the AST.
 
+use super::KoopaTextBuilder;
+use crate::frontend::ast::*;
+
+// A shortcut. I don't want to type `KoopaTextBuilder::TAB` every time.
+// Besides, `format!` cannot capture such expression.
+// Hope this feature will be enhanced in Rust 2024.
 const TAB: &str = KoopaTextBuilder::TAB;
 
+// Also a shortcut. Just for interface consistency.
 macro_rules! null {
     () => {
         "null".to_string()
@@ -17,8 +24,7 @@ macro_rules! push_text {
 
 macro_rules! push_binary_op {
     ($self:tt, $op:tt, $dst:tt, $src1:tt, $src2:tt) => {
-        push_text!($self, "{TAB}{} = {} {}, {}\n",
-            $dst, $op, $src1, $src2)
+        push_text!($self, "{TAB}{} = {} {}, {}\n", $dst, $op, $src1, $src2)
     };
 }
 
@@ -50,13 +56,16 @@ macro_rules! impl_build_from_binary_op {
     };
 }
 
+// The returned string may be used for different purposes, or not used at all.
 pub trait BuildFrom<T> {
     fn build_from(&mut self, target: &T, used: bool) -> String;
 }
 
 impl BuildFrom<Program> for KoopaTextBuilder {
     fn build_from(&mut self, prog: &Program, _: bool) -> String {
-        push_text!(self, "\
+        push_text!(
+            self,
+            "\
             decl @getint(): i32\n\
             decl @getch(): i32\n\
             decl @getarray(*i32): i32\n\
@@ -67,9 +76,10 @@ impl BuildFrom<Program> for KoopaTextBuilder {
             decl @stoptime()\n\n"
         );
 
-        for comp_unit in &prog.0 {
-            self.build_from(comp_unit, false);
-        }
+        prog.0.iter().for_each(|func_def| {
+            self.build_from(func_def, false);
+        });
+
         null!()
     }
 }
@@ -91,25 +101,41 @@ impl BuildFrom<CompUnit> for KoopaTextBuilder {
 
 impl BuildFrom<FuncDef> for KoopaTextBuilder {
     fn build_from(&mut self, func_def: &FuncDef, _: bool) -> String {
-        self.reset_labels();
+        self.reset_tokens();
+
+        let ty = self.build_from(&func_def.0, false);
+        let name = &func_def.1;
         let params = func_def.2
             .iter()
             .map(|param| self.build_from(param, false))
             .collect::<Vec<_>>()
             .join(", ");
-        let ty = self.build_from(&func_def.0, false);
-        push_text!(self, "fun @{}({params}){ty} {{\n", &func_def.1);
+
+        // fun @name(...) [-> i32] {
+        // %entry:
+        push_text!(self, "fun @{name}({params}){ty} {{\n");
         push_text!(self, "%entry:\n");
+
+        // Localize parameters.
         func_def.2.iter().for_each(|param| {
             let ident = &param.1;
             push_text!(self, "{TAB}{ident} = alloc i32\n");
             push_text!(self, "{TAB}store {ident}_f, {ident}\n");
         });
+
+        // Build function body.
         self.build_from(&func_def.3, false);
+
+        // In my implementation, the last return in a function always leaves
+        // a dangling label. As I generate Koopa text in one pass, it is hard
+        // to address this problem normally. This is the workaround:
+        // just add an extra, unreachable instruction.
+        // Koopa library will emit a warning and ignore unreachable blocks.
         match func_def.0 {
             BType::Int => push_text!(self, "{TAB}ret 114514\n"),
             BType::Void => push_text!(self, "{TAB}ret\n"),
         }
+
         push_text!(self, "}}\n");
         push_text!(self, "\n");
         null!()
@@ -124,9 +150,9 @@ impl BuildFrom<FuncFParam> for KoopaTextBuilder {
 
 impl BuildFrom<Block> for KoopaTextBuilder {
     fn build_from(&mut self, block: &Block, _: bool) -> String {
-        for block_item in &block.0 {
+        block.0.iter().for_each(|block_item| {
             self.build_from(block_item, false);
-        }
+        });
         null!()
     }
 }
@@ -149,36 +175,56 @@ impl BuildFrom<Stmt> for KoopaTextBuilder {
             }
             If(exp, stmt, opt_stmt) => {
                 let src = self.build_from(exp, true);
-                let then_label = self.make_token("%then_");
-                let else_label = self.make_token("%else_");
-                let endif_label = self.make_token("%endif_");
+                let then = self.make_token("%then_");
+                let else_ = self.make_token("%else_");
+                let endif = self.make_token("%endif_");
                 if let Some(else_stmt) = opt_stmt {
-                    push_text!(self, "{TAB}br {src}, {then_label}, {else_label}\n");
-                    push_text!(self, "{}:\n", then_label);
+                    //     br ... then else
+                    // then:
+                    //     ...
+                    //     jump endif
+                    // else:
+                    //     ...
+                    //     jump endif
+                    // endif:
+                    push_text!(self, "{TAB}br {src}, {then}, {else_}\n");
+                    push_text!(self, "{then}:\n");
                     self.build_from(stmt.as_ref(), false);
-                    push_text!(self, "{TAB}jump {endif_label}\n");
-                    push_text!(self, "{}:\n", else_label);
+                    push_text!(self, "{TAB}jump {endif}\n");
+                    push_text!(self, "{else_}:\n");
                     self.build_from(else_stmt.as_ref(), false);
-                    push_text!(self, "{TAB}jump {endif_label}\n");
-                    push_text!(self, "{endif_label}:\n");
+                    push_text!(self, "{TAB}jump {endif}\n");
+                    push_text!(self, "{endif}:\n");
                 } else {
-                    push_text!(self, "{TAB}br {src}, {then_label}, {endif_label}\n");
-                    push_text!(self, "{}:\n", then_label);
+                    //    br ... then endif
+                    // then:
+                    //     ...
+                    //     jump endif
+                    // endif:
+                    push_text!(self, "{TAB}br {src}, {then}, {endif}\n");
+                    push_text!(self, "{then}:\n");
                     self.build_from(stmt.as_ref(), false);
-                    push_text!(self, "{TAB}jump {endif_label}\n");
-                    push_text!(self, "{endif_label}:\n");
+                    push_text!(self, "{TAB}jump {endif}\n");
+                    push_text!(self, "{endif}:\n");
                 }
             }
             While(exp, stmt) => {
+                //     jump entry
+                // entry:
+                //     (calc cond)
+                //     br cond body end
+                // body:
+                //     ...
+                //     jump entry
                 self.enter_loop();
                 let entry = self.make_token("%cond_");
                 let body = self.make_token("%body_");
                 let end = self.make_token("%endwhile_");
                 push_text!(self, "{TAB}jump {entry}\n");
-                push_text!(self, "{}:\n", entry);
+                push_text!(self, "{entry}:\n");
                 let cond = self.build_from(exp, true);
                 push_text!(self, "{TAB}br {cond}, {body}, {end}\n");
-                push_text!(self, "{}:\n", body);
+                push_text!(self, "{body}:\n");
                 self.build_from(stmt.as_ref(), false);
                 push_text!(self, "{TAB}jump {entry}\n");
                 push_text!(self, "{end}:\n");
@@ -240,16 +286,16 @@ impl BuildFrom<UnaryExp> for KoopaTextBuilder {
                 let args = exps
                     .iter()
                     .map(|exp| self.build_from(exp, true))
-                    .collect::<Vec<_>>();
-                push_text!(self, "{TAB}");
-                let mut dst = null!();
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 if used {
-                    dst = self.make_num();
-                    push_text!(self, "{dst} = ");
+                    let dst = self.make_num();
+                    push_text!(self, "{TAB}{dst} = call @{ident}({args})\n");
+                    dst
+                } else {
+                    push_text!(self, "{TAB}call @{ident}({args})\n");
+                    null!()
                 }
-                let text = args.join(", ");
-                push_text!(self, "call @{ident}({text})\n");
-                dst
             }
             OpUnary(op, bexp) => {
                 let src = self.build_from(bexp.as_ref(), used);
@@ -285,49 +331,57 @@ impl_build_from_binary_op!(self, RelExp, Add, RelOpAdd, RelOp,
 
 impl_build_from_binary_op!(self, EqExp, Rel, EqOpRel, EqOp,
     op_rule: Eq => "eq", Ne => "ne");
-    
+
 impl BuildFrom<LAndExp> for KoopaTextBuilder {
     fn build_from(&mut self, land_exp: &LAndExp, used: bool) -> String {
         use LAndExp::*;
         match land_exp {
             Eq(bexp) => self.build_from(bexp.as_ref(), used),
             LAndEq(bexps, bexp) => {
-                let then_label = self.make_token("%then_");
+                let then = self.make_token("%then_");
                 let _ = self.make_token("%else_");
-                let endif_label = self.make_token("%endif_");
+                let endif = self.make_token("%endif_");
                 if !used {
+                    //     (calc lhs)
+                    //     br lhs then endif
+                    // then:
+                    //     (calc rhs)
+                    //     jump endif
+                    // endif:
                     let src1 = self.build_from(bexps.as_ref(), true);
-                    push_text!(self, "{TAB}br {src1}, {then_label}, {endif_label}\n");
-                    push_text!(self, "{}:\n", then_label);
+                    push_text!(self, "{TAB}br {src1}, {then}, {endif}\n");
+                    push_text!(self, "{then}:\n");
                     self.build_from(bexp.as_ref(), false);
-                    push_text!(self, "{TAB}jump {endif_label}\n");
-                    push_text!(self, "{endif_label}:\n");
+                    push_text!(self, "{TAB}jump {endif}\n");
+                    push_text!(self, "{endif}:\n");
                     return null!();
                 }
+                //     var = alloc i32
+                //     store 0, var
+                //     (calc lhs)
+                //     br lhs then endif
+                // then:
+                //     (calc rhs)
+                //     tmp = ne 0, rhs
+                //     store tmp, var
+                //     jump endif
+                // endif:
+                //     dst = load var
                 let var = self.make_tmp();
                 push_text!(self, "{TAB}{var} = alloc i32\n");
                 push_text!(self, "{TAB}store 0, {var}\n");
                 let src1 = self.build_from(bexps.as_ref(), true);
-                push_text!(self, "{TAB}br {src1}, {then_label}, {endif_label}\n");
-                push_text!(self, "{}:\n", then_label);
+                push_text!(self, "{TAB}br {src1}, {then}, {endif}\n");
+                push_text!(self, "{then}:\n");
                 let src2 = self.build_from(bexp.as_ref(), true);
                 let temp = self.make_num();
                 push_text!(self, "{TAB}{temp} = ne 0, {src2}\n");
                 push_text!(self, "{TAB}store {temp}, {var}\n");
-                push_text!(self, "{TAB}jump {endif_label}\n");
-                push_text!(self, "{endif_label}:\n");
+                push_text!(self, "{TAB}jump {endif}\n");
+                push_text!(self, "{endif}:\n");
                 let dst = self.make_num();
                 push_text!(self, "{TAB}{dst} = load {var}\n");
                 dst
-                // let src1 = self.build_from(bexps.as_ref());
-                // let src2 = self.build_from(bexp.as_ref());
-                // let temp1 = self.make_ident();
-                // let temp2 = self.make_ident();
-                // let dst = self.make_ident();
-                // push_binary_op!(self, "ne", temp1, 0, src1);
-                // push_binary_op!(self, "ne", temp2, 0, src2);
-                // push_binary_op!(self, "and", dst, temp1, temp2);
-                // dst
             }
         }
     }
@@ -339,40 +393,50 @@ impl BuildFrom<LOrExp> for KoopaTextBuilder {
         match lor_exp {
             LAnd(bexp) => self.build_from(bexp.as_ref(), used),
             LOrLAnd(bexps, bexp) => {
-                let then_label = self.make_token("%then_");
+                let then = self.make_token("%then_");
                 let _ = self.make_token("%else_");
-                let endif_label = self.make_token("%endif_");
+                let endif = self.make_token("%endif_");
                 if !used {
+                    //     (calc lhs)
+                    //     br lhs endif then
+                    // then:
+                    //     (calc rhs)
+                    //     jump endif
+                    // endif:
                     let src1 = self.build_from(bexps.as_ref(), true);
-                    push_text!(self, "{TAB}br {src1}, {endif_label}, {then_label}\n");
-                    push_text!(self, "{}:\n", then_label);
+                    push_text!(self, "{TAB}br {src1}, {endif}, {then}\n");
+                    push_text!(self, "{then}:\n");
                     self.build_from(bexp.as_ref(), false);
-                    push_text!(self, "{TAB}jump {endif_label}\n");
-                    push_text!(self, "{endif_label}:\n");
+                    push_text!(self, "{TAB}jump {endif}\n");
+                    push_text!(self, "{endif}:\n");
                     return null!();
                 }
+                //     var = alloc i32
+                //     store 1, var
+                //     (calc lhs)
+                //     br lhs endif then
+                // then:
+                //     (calc rhs)
+                //     tmp = ne 0, rhs
+                //     store tmp, var
+                //     jump endif
+                // endif:
+                //     dst = load var
                 let var = self.make_tmp();
                 push_text!(self, "{TAB}{var} = alloc i32\n");
                 push_text!(self, "{TAB}store 1, {var}\n");
                 let src1 = self.build_from(bexps.as_ref(), true);
-                push_text!(self, "{TAB}br {src1}, {endif_label}, {then_label}\n");
-                push_text!(self, "{}:\n", then_label);
+                push_text!(self, "{TAB}br {src1}, {endif}, {then}\n");
+                push_text!(self, "{then}:\n");
                 let src2 = self.build_from(bexp.as_ref(), true);
                 let temp = self.make_num();
                 push_text!(self, "{TAB}{temp} = ne 0, {src2}\n");
                 push_text!(self, "{TAB}store {temp}, {var}\n");
-                push_text!(self, "{TAB}jump {endif_label}\n");
-                push_text!(self, "{endif_label}:\n");
+                push_text!(self, "{TAB}jump {endif}\n");
+                push_text!(self, "{endif}:\n");
                 let dst = self.make_num();
                 push_text!(self, "{TAB}{dst} = load {var}\n");
                 dst
-                // let src1 = self.build_from(bexps.as_ref());
-                // let src2 = self.build_from(bexp.as_ref());
-                // let temp = self.make_ident();
-                // let dst = self.make_ident();
-                // push_binary_op!(self, "or", temp, src1, src2);
-                // push_binary_op!(self, "ne", dst, 0, temp);
-                // dst
             }
         }
     }
@@ -425,15 +489,16 @@ impl BuildFrom<BType> for KoopaTextBuilder {
         match btype {
             Int => ": i32",
             Void => "",
-        }.to_string()
+        }
+        .to_string()
     }
 }
 
 impl BuildFrom<VarDecl> for KoopaTextBuilder {
     fn build_from(&mut self, var_decl: &VarDecl, _: bool) -> String {
-        for var_def in &var_decl.1 {
+        var_decl.1.iter().for_each(|var_def| {
             self.build_from(var_def, false);
-        }
+        });
         null!()
     }
 }
