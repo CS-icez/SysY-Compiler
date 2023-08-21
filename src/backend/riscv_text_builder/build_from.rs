@@ -1,3 +1,7 @@
+//! This module defines and implements the `BuildFrom` trait for `RiscvTextBuilder`.
+//! RISCV text generating is done by simply scanning the in-memory
+//! RISCV program and appending the corresponding text.
+
 use super::super::riscv::*;
 use super::RiscvTextBuilder;
 
@@ -16,21 +20,19 @@ pub trait BuildFrom<T> {
 impl BuildFrom<Program> for RiscvTextBuilder {
     fn build_from(&mut self, prog: &Program) {
         push_text!(self, "{TAB}.data\n");
-        for global_def in &prog.global_defs {
-            self.build_from(global_def);
-        }
+        prog.global_defs.iter().for_each(|def| self.build_from(def));
         push_text!(self, "{TAB}.text\n");
-        for func in &prog.funcs {
-            self.build_from(func);
-        }
+        prog.funcs.iter().for_each(|func| self.build_from(func));
     }
 }
 
 impl BuildFrom<GlobalDef> for RiscvTextBuilder {
     fn build_from(&mut self, global_def: &GlobalDef) {
-        push_text!(self, "{TAB}.globl {}\n", global_def.name);
-        push_text!(self, "{}:\n", global_def.name);
-        push_text!(self, "{TAB}.word {}\n", global_def.init);
+        let name = &global_def.name;
+        let init = global_def.init;
+        push_text!(self, "{TAB}.globl {name}\n");
+        push_text!(self, "{name}:\n");
+        push_text!(self, "{TAB}.word {init}\n");
         push_text!(self, "\n");
     }
 }
@@ -38,9 +40,7 @@ impl BuildFrom<GlobalDef> for RiscvTextBuilder {
 impl BuildFrom<Func> for RiscvTextBuilder {
     fn build_from(&mut self, func: &Func) {
         push_text!(self, "{TAB}.globl {}\n", func.name);
-        for block in &func.blocks {
-            self.build_from(block);
-        }
+        func.blocks.iter().for_each(|block| self.build_from(block));
         push_text!(self, "\n");
     }
 }
@@ -48,9 +48,7 @@ impl BuildFrom<Func> for RiscvTextBuilder {
 impl BuildFrom<Block> for RiscvTextBuilder {
     fn build_from(&mut self, block: &Block) {
         push_text!(self, "{}:\n", block.name);
-        for inst in &block.insts {
-            self.build_from(inst);
-        }
+        block.insts.iter().for_each(|inst| self.build_from(inst));
     }
 }
 

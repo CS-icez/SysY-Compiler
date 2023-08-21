@@ -1,6 +1,5 @@
 //! Token generator for generating unique tokens with the same prefix.
 
-#[derive(Default)]
 pub struct TokenGenerator {
     prefix: String,
     counter: u32,

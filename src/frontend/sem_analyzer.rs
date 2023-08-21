@@ -13,7 +13,6 @@ use symtab::{
     Symbol::{self, *},
 };
 
-#[derive(Default)]
 pub struct SemAnalyzer {
     symtabs: VecDeque<SymTab>, // Actually a stack, Rust std didn't provide it.
     ident_cnt: HashMap<String, u32>,

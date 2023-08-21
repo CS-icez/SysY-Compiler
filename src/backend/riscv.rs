@@ -1,33 +1,30 @@
+//! RISCV data types.
+
 use std::collections::LinkedList;
 
 pub type Reg = &'static str;
 
-#[derive(Default, Clone)]
 pub struct Program {
     pub global_defs: LinkedList<GlobalDef>,
     pub funcs: LinkedList<Func>,
 }
 
-#[derive(Default, Clone)]
 pub struct GlobalDef {
     pub name: String,
     pub init: i32,
 }
 
-#[derive(Default, Clone)]
 pub struct Func {
     pub name: String,
     pub blocks: LinkedList<Block>,
 }
 
-#[derive(Default, Clone)]
 pub struct Block {
     pub name: String,
     pub insts: LinkedList<Inst>,
 }
 
 #[allow(dead_code)]
-#[derive(Clone)]
 pub enum Inst {
     Beqz { rs: Reg, label: String },
     Bnez { rs: Reg, label: String },

@@ -1,9 +1,10 @@
+//! RISC-V text builder.
+
 mod build_from;
 
-use super::riscv;
+use super::riscv::Program;
 use build_from::BuildFrom;
 
-#[derive(Default)]
 pub struct RiscvTextBuilder {
     text: String,
 }
@@ -11,23 +12,17 @@ pub struct RiscvTextBuilder {
 impl RiscvTextBuilder {
     const TAB: &str = "    ";
 
-    pub fn new() -> Self {
+    /// Builds RISCV text from given RISCV program.
+    pub fn build(prog: &Program) -> String {
+        let mut builder = Self::new();
+        builder.build_from(prog);
+        builder.text
+    }
+
+    /// Creates a new RISCV text builder.
+    fn new() -> Self {
         Self {
             text: String::new(),
         }
-    }
-
-    pub fn build(&mut self, prog: &riscv::Program) -> String {
-        self.build_from(prog);
-        // Huge overhead here, yet don't know which syntax to use to avoid it.
-        let res = self.text.clone();
-        *self = Default::default();
-        res
-    }
-}
-
-impl riscv::Program {
-    pub fn to_text(&self) -> String {
-        RiscvTextBuilder::new().build(self)
     }
 }

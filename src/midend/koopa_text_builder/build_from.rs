@@ -1,4 +1,4 @@
-//! This module implements the `BuildFrom` trait for `KoopaTextBuilder`.
+//! This module defines and implements the `BuildFrom` trait for `KoopaTextBuilder`.
 //! Koopa text generating is done by traversing the AST.
 
 use super::KoopaTextBuilder;
@@ -18,41 +18,7 @@ macro_rules! null {
 
 macro_rules! push_text {
     ($self:tt, $($arg:tt)*) => {
-        $self.text.push_str(&format!($($arg)*))
-    };
-}
-
-macro_rules! push_binary_op {
-    ($self:tt, $op:tt, $dst:tt, $src1:tt, $src2:tt) => {
-        push_text!($self, "{TAB}{} = {} {}, {}\n", $dst, $op, $src1, $src2)
-    };
-}
-
-macro_rules! impl_build_from_binary_op {
-    ($self:tt, $T:ty, $arm1:tt, $arm2:tt, $O:ty,
-        op_rule: $($l:tt => $r:tt),*) => {
-        impl BuildFrom<$T> for KoopaTextBuilder {
-            fn build_from(&mut self, exp: &$T, used: bool) -> String {
-                use $T::*;
-                use $O::*;
-                match exp {
-                    $arm1(bexp) => self.build_from(bexp.as_ref(), used),
-                    $arm2(bexps, op, bexp) => {
-                        let src1 = self.build_from(bexps.as_ref(), used);
-                        let src2 = self.build_from(bexp.as_ref(), used);
-                        if !used {
-                            return null!();
-                        }
-                        let dst = self.make_num();
-                        let op = match op {
-                            $($l => $r,)*
-                        };
-                        push_binary_op!(self, op, dst, src1, src2);
-                        dst
-                    }
-                }
-            }
-        }
+        $self.text.push_str(format!($($arg)*).as_ref())
     };
 }
 
@@ -77,9 +43,7 @@ impl BuildFrom<Program> for KoopaTextBuilder {
             decl @stoptime()\n\n"
         );
 
-        prog.0.iter().for_each(|func_def| {
-            self.build_from(func_def, false);
-        });
+        prog.0.iter().for_each(|def| { self.build_from(def, false); });
 
         null!()
     }
@@ -127,9 +91,10 @@ impl BuildFrom<FuncDef> for KoopaTextBuilder {
         // Build function body.
         self.build_from(&func_def.3, false);
 
+        // Hack:
         // In my implementation, the last return in a function always leaves
         // a dangling label. As I generate Koopa text in one pass, it is hard
-        // to address this problem normally. This is the workaround:
+        // to address this problem normally. Here is the workaround:
         // just add an extra, unreachable instruction.
         // Koopa library will emit a warning and ignore unreachable blocks.
         match func_def.0 {
@@ -151,9 +116,7 @@ impl BuildFrom<FuncFParam> for KoopaTextBuilder {
 
 impl BuildFrom<Block> for KoopaTextBuilder {
     fn build_from(&mut self, block: &Block, _: bool) -> String {
-        block.0.iter().for_each(|block_item| {
-            self.build_from(block_item, false);
-        });
+        block.0.iter().for_each(|item| { self.build_from(item, false); });
         null!()
     }
 }
@@ -308,17 +271,45 @@ impl BuildFrom<UnaryExp> for KoopaTextBuilder {
                     Plus => dst = src,
                     Minus => {
                         dst = self.make_num();
-                        push_binary_op!(self, "sub", dst, 0, src);
+                        push_text!(self, "{TAB}{dst} = sub 0, {src}\n");
                     }
                     Not => {
                         dst = self.make_num();
-                        push_binary_op!(self, "eq", dst, 0, src);
+                        push_text!(self, "{TAB}{dst} = eq 0, {src}\n");
                     }
                 }
                 dst
             }
         }
     }
+}
+
+macro_rules! impl_build_from_binary_op {
+    ($self:tt, $T:ty, $arm1:tt, $arm2:tt, $O:ty,
+        op_rule: $($l:tt => $r:tt),*) => {
+        impl BuildFrom<$T> for KoopaTextBuilder {
+            fn build_from(&mut self, exp: &$T, used: bool) -> String {
+                use $T::*;
+                use $O::*;
+                match exp {
+                    $arm1(bexp) => self.build_from(bexp.as_ref(), used),
+                    $arm2(bexps, op, bexp) => {
+                        let src1 = self.build_from(bexps.as_ref(), used);
+                        let src2 = self.build_from(bexp.as_ref(), used);
+                        if !used {
+                            return null!();
+                        }
+                        let dst = self.make_num();
+                        let op = match op {
+                            $($l => $r,)*
+                        };
+                        push_text!(self, "{TAB}{dst} = {op} {src1}, {src2}\n");
+                        dst
+                    }
+                }
+            }
+        }
+    };
 }
 
 impl_build_from_binary_op!(self, MulExp, Unary, MulOpUnary, MulOp,
@@ -497,9 +488,7 @@ impl BuildFrom<BType> for KoopaTextBuilder {
 
 impl BuildFrom<VarDecl> for KoopaTextBuilder {
     fn build_from(&mut self, var_decl: &VarDecl, _: bool) -> String {
-        var_decl.1.iter().for_each(|var_def| {
-            self.build_from(var_def, false);
-        });
+        var_decl.1.iter().for_each(|def| { self.build_from(def, false); });
         null!()
     }
 }

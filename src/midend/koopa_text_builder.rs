@@ -15,7 +15,6 @@ struct LoopMeta {
     end_label: String,
 }
 
-#[derive(Default)]
 pub struct KoopaTextBuilder {
     text: String,
     loop_meta: VecDeque<LoopMeta>, // Actually a stack.
@@ -94,11 +93,14 @@ impl KoopaTextBuilder {
     }
 
     /// Equivalent to `make_token("%tmp")`, serving as a shortcut.
+    /// This is used for logical and/or expressions.
     fn make_tmp(&mut self) -> String {
         self.make_token("%tmp")
     }
 
     /// Equivalent to `make_token("%koopa_")`, serving as a shortcut.
+    /// This is used to satisfy Koopa's rule that `br` `jump` `ret` must be
+    /// the last instruction in a basic block.
     fn make_koopa(&mut self) -> String {
         self.make_token("%koopa_")
     }

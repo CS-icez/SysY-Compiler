@@ -3,45 +3,6 @@
 use super::SemAnalyzer;
 use crate::frontend::ast::*;
 
-// This saves me from writing a lot of similar code.
-// I really hope lalrpop could support defining rule precedence.
-macro_rules! impl_eval_binary_op {
-    ($T:ty, $arm1:tt, $arm2:tt, $clo:tt) => {
-        impl Eval<$T> for SemAnalyzer {
-            fn eval(&self, exp: &$T) -> i32 {
-                use $T::*;
-                match exp {
-                    $arm1(bexp) => self.eval(bexp.as_ref()),
-                    $arm2(bexps, bexp) => {
-                        let lhs = self.eval(bexps.as_ref());
-                        let rhs = self.eval(bexp.as_ref());
-                        $clo(lhs, rhs)
-                    }
-                }
-            }
-        }
-    };
-    ($T:ty, $arm1:tt, $arm2:tt, $O:ty,
-        op_rule: $($arm:tt => $clo:tt,)*) => {
-        impl Eval<$T> for SemAnalyzer {
-            fn eval(&self, exp: &$T) -> i32 {
-                use $T::*;
-                use $O::*;
-                match exp {
-                    $arm1(bexp) => self.eval(bexp.as_ref()),
-                    $arm2(bexps, op, bexp) => {
-                        let lhs = self.eval(bexps.as_ref());
-                        let rhs = self.eval(bexp.as_ref());
-                        match op {
-                            $($arm => $clo(lhs, rhs),)*
-                        }
-                    }
-                }
-            }
-        }
-    };
-}
-
 pub trait Eval<T> {
     fn eval(&self, target: &T) -> i32;
 }
@@ -98,6 +59,45 @@ impl Eval<UnaryExp> for SemAnalyzer {
             }
         }
     }
+}
+
+// This saves me from writing a lot of similar code.
+// I really hope lalrpop could support defining rule precedence.
+macro_rules! impl_eval_binary_op {
+    ($T:ty, $arm1:tt, $arm2:tt, $clo:tt) => {
+        impl Eval<$T> for SemAnalyzer {
+            fn eval(&self, exp: &$T) -> i32 {
+                use $T::*;
+                match exp {
+                    $arm1(bexp) => self.eval(bexp.as_ref()),
+                    $arm2(bexps, bexp) => {
+                        let lhs = self.eval(bexps.as_ref());
+                        let rhs = self.eval(bexp.as_ref());
+                        $clo(lhs, rhs)
+                    }
+                }
+            }
+        }
+    };
+    ($T:ty, $arm1:tt, $arm2:tt, $O:ty,
+        op_rule: $($arm:tt => $clo:tt,)*) => {
+        impl Eval<$T> for SemAnalyzer {
+            fn eval(&self, exp: &$T) -> i32 {
+                use $T::*;
+                use $O::*;
+                match exp {
+                    $arm1(bexp) => self.eval(bexp.as_ref()),
+                    $arm2(bexps, op, bexp) => {
+                        let lhs = self.eval(bexps.as_ref());
+                        let rhs = self.eval(bexp.as_ref());
+                        match op {
+                            $($arm => $clo(lhs, rhs),)*
+                        }
+                    }
+                }
+            }
+        }
+    };
 }
 
 impl_eval_binary_op!(MulExp, Unary, MulOpUnary, MulOp,

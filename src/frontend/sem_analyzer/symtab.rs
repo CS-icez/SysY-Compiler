@@ -14,7 +14,6 @@ pub enum Symbol {
     ConstInt { token: String, value: i32 },
 }
 
-#[derive(Default)]
 pub struct SymTab {
     table: HashMap<String, Symbol>,
 }

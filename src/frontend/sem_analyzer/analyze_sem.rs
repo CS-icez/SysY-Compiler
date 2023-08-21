@@ -14,8 +14,7 @@ pub trait Analyze<T> {
 impl Analyze<Program> for SemAnalyzer {
     fn analyze(&mut self, prog: &mut Program) {
         self.enter_scope(); // Global scope.
-        prog.0.iter_mut()
-            .for_each(|comp_unit| self.analyze(comp_unit));
+        prog.0.iter_mut().for_each(|unit| self.analyze(unit));
         self.exit_scope();
     }
 }
@@ -45,8 +44,7 @@ impl Analyze<FuncDef> for SemAnalyzer {
 impl Analyze<Block> for SemAnalyzer {
     fn analyze(&mut self, block: &mut Block) {
         self.enter_scope();
-        block.0.iter_mut()
-            .for_each(|block_item| self.analyze(block_item));
+        block.0.iter_mut().for_each(|item| self.analyze(item));
         self.exit_scope();
     }
 }
@@ -118,8 +116,7 @@ impl Analyze<Decl> for SemAnalyzer {
 
 impl Analyze<ConstDecl> for SemAnalyzer {
     fn analyze(&mut self, const_decl: &mut ConstDecl) {
-        const_decl.1.iter_mut()
-            .for_each(|const_def| self.analyze(const_def));
+        const_decl.1.iter_mut().for_each(|def| self.analyze(def));
     }
 }
 
@@ -134,8 +131,7 @@ impl Analyze<ConstDef> for SemAnalyzer {
 impl Analyze<VarDecl> for SemAnalyzer {
     // Local variable declaration.
     fn analyze(&mut self, var_decl: &mut VarDecl) {
-        var_decl.1.iter_mut()
-            .for_each(|var_def| self.analyze(var_def));
+        var_decl.1.iter_mut().for_each(|def| self.analyze(def));
     }
 }
 
