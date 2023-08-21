@@ -45,13 +45,7 @@ impl SemAnalyzer {
     /// Traverses the symbol table stack and returns the symbol
     /// corresponding to the given identifier.
     fn symbol(&self, ident: &str) -> &Symbol {
-        let res = self.symtabs.iter().find_map(|table| table.get(ident));
-
-        if let Some(symbol) = res {
-            return symbol;
-        } else {
-            panic!("Symbol {ident} not found");
-        }
+        self.symtabs.iter().find_map(|table| table.get(ident)).unwrap()
     }
 
     /// Returns the mangled name of the given identifier.

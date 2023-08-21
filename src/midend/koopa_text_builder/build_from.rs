@@ -442,17 +442,19 @@ impl BuildFrom<GlobalDecl> for KoopaTextBuilder {
         match decl {
             ConstDecl(_) => {}
             VarDecl(var_decl) => {
-                for var_def in &var_decl.1 {
-                    match var_def {
+                var_decl.1.iter().for_each(|def| {
+                    match def {
                         Init(ident, init_val) => {
                             let val = self.build_from(init_val, true);
-                            push_text!(self, "global {ident} = alloc i32, {val}\n\n");
+                            push_text!(self, "global {ident} = alloc i32, {val}\n");
+                            push_text!(self, "\n");
                         }
                         NoInit(ident) => {
-                            push_text!(self, "global {ident} = alloc i32, zeroinit\n\n");
+                            push_text!(self, "global {ident} = alloc i32, zeroinit\n");
+                            push_text!(self, "\n");
                         }
                     }
-                }
+                });
             }
         }
         null!()

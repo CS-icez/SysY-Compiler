@@ -44,15 +44,13 @@ impl RegManager {
 
     /// Creates a new register manager.
     pub fn new() -> Self {
-        let mut arr = [Some(Self::NULL_VAL); Self::REG_NUM];
-        for i in 6..=7 {
-            arr[i] = None;
-        }
-        for i in 9..=31 {
-            arr[i] = None;
-        }
         RegManager {
-            reg2val: arr,
+            reg2val: {
+                let mut arr = [Some(Self::NULL_VAL); Self::REG_NUM];
+                (6..=7).for_each(|i| arr[i] = None);
+                (9..=31).for_each(|i| arr[i] = None);
+                arr
+            },
             val2reg: HashMap::new(),
         }
     }

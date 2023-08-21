@@ -85,8 +85,8 @@ impl Analyze<GlobalDecl> for SemAnalyzer {
         match &mut global_decl.0 {
             ConstDecl(const_decl) => self.analyze(const_decl),
             VarDecl(var_decl) => {
-                for var_def in &mut var_decl.1 {
-                    match var_def {
+                var_decl.1.iter_mut().for_each(|def| {
+                    match def {
                         NoInit(name) => {
                             self.insert_int(name.to_string());
                             *name = self.to_mangled(name);
@@ -98,7 +98,7 @@ impl Analyze<GlobalDecl> for SemAnalyzer {
                             *init_val = InitVal::Number(Number(value));
                         }
                     }
-                }
+                });
             }
         }
     }

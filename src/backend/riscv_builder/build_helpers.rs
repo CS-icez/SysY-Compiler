@@ -87,19 +87,21 @@ impl RiscvBuilder<'_> {
         let regs = self.reg_mgr.regs();
         let size = 4 * regs.len() as i32;
         let off = self.func_meta.arg_size() as i32;
+
         self.build_addi("sp", "sp", -size);
-        for (i, reg) in regs.iter().enumerate() {
+        regs.iter().enumerate().for_each(|(i, reg)| {
             self.build_sw(reg, (i as i32) * 4 + off, "sp");
-        }
+        });
     }
 
     pub fn restore_regs(&mut self) {
         let regs = self.reg_mgr.regs();
         let size = 4 * regs.len() as i32;
         let off = self.func_meta.arg_size() as i32;
-        for (i, reg) in regs.iter().enumerate() {
+
+        regs.iter().enumerate().for_each(|(i, reg)| {
             self.build_lw(reg, (i as i32) * 4 + off, "sp");
-        }
+        });
         self.build_addi("sp", "sp", size);
     }
 
@@ -113,15 +115,15 @@ impl RiscvBuilder<'_> {
                 builder.build_lw(rd, builder.offset(value) as i32, "sp");
             }
         };
-        
-        for (i, &arg) in args.iter().enumerate() {
+
+        args.iter().enumerate().for_each(|(i, &arg)| {
             if i < 8 { // First 8 arguments go to a0-a7.
                 f(self, arg, REGS[i]);
             } else { // The rest go to stack.
                 f(self, arg, t0);
                 self.build_sw(t0, (i - 8) as i32 * 4, "sp");
             }
-        }
+        });
     }
 
     #[allow(dead_code)]
