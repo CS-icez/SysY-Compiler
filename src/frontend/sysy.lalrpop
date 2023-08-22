@@ -29,9 +29,9 @@ pub Program: Program = {
     <CompUnit*> => Program(<>),
 };
 
-/// CompUnit ::= GlobalDecl | FuncDef
+/// CompUnit ::= VarDecl | FuncDef
 CompUnit: CompUnit = {
-    <GlobalDecl> => CompUnit::GlobalDecl(<>),
+    <VarDecl> => CompUnit::VarDecl(VarDecl { is_global: true, ..<> }),
     <FuncDef> => CompUnit::FuncDef(<>),
 };
 
@@ -47,20 +47,22 @@ IntConst: i32 = {
 
 // Variable declaration.
 
-/// GlobalDecl ::= Decl
-GlobalDecl: GlobalDecl = {
-    <Decl> => GlobalDecl(<>),
-};
-
-/// Decl ::= ConstDecl | VarDecl
-Decl: Decl = {
-    <ConstDecl> => Decl::ConstDecl(<>),
-    <VarDecl> => Decl::VarDecl(<>),
-};
-
-/// ConstDecl ::= "const" BType ConstDef {"," ConstDef} ";"
-ConstDecl: ConstDecl = {
-    "const" <BType> <Comma<ConstDef>> ";" => ConstDecl(<>),
+/// VarDecl ::= ["const"] BType VarDef {"," VarDef} ";"
+VarDecl: VarDecl = {
+     "const" <btype: BType> <var_defs: Comma<VarDef>> ";" => {
+        VarDecl {
+            is_global: false,
+            is_const: true,
+            btype, var_defs,
+        }
+     },
+     <btype: BType> <var_defs: Comma<VarDef>> ";" => {
+        VarDecl {
+            is_global: false,
+            is_const: false,
+            btype, var_defs,
+        }
+     },
 };
 
 /// BType ::= "int" | "void"
@@ -69,30 +71,15 @@ BType: BType = {
     "void" => BType::Void,
 }
 
-/// ConstDef ::= IDENT "=" ConstInitVal
-ConstDef: ConstDef = {
-    <Ident> "=" <ConstInitVal> => ConstDef(<>),
-};
-
-/// ConstInitVal ::= ConstExp
-ConstInitVal: ConstInitVal = {
-    <ConstExp> => ConstInitVal(<>),
-};
-
-/// VarDecl ::= BType VarDef {"," VarDef} ";"
-VarDecl: VarDecl = {
-    <BType> <Comma<VarDef>> ";" => VarDecl(<>),
-};
-
-/// VarDef ::= IDENT | IDENT "=" InitVal
+/// VarDef ::= IDENT ["=" Exp]
+///     | IDENT "[" Exp "]" = "{" [Exp {"," Exp}] "}"
 VarDef: VarDef = {
-    <Ident> => VarDef::NoInit(<>),
-    <Ident> "=" <InitVal> => VarDef::Init(<>),
-};
-
-/// InitVal ::= Exp
-InitVal: InitVal = {
-    <Exp> => InitVal::Exp(<>),
+    <Ident> => VarDef::Scalar(<>, None),
+    <ident: Ident> "=" <exp: Exp> => VarDef::Scalar(ident, Some(exp)),
+    <ident: Ident> "[" <exp: Exp> "]" => VarDef::Array(ident, vec![exp], None),
+    <ident: Ident> "[" <exp: Exp> "]" "=" "{" <exps: Comma<Exp>> "}" => VarDef::Array(
+        ident, vec![exp], Some(exps),
+    ),
 };
 
 // Function definition.
@@ -115,7 +102,7 @@ Block: Block = {
 
 /// BlockItem ::= Decl | Stmt
 BlockItem: BlockItem = {
-    <Decl> => BlockItem::Decl(<>),
+    <VarDecl> => BlockItem::VarDecl(<>),
     <Stmt> => BlockItem::Stmt(<>),
 };
 
@@ -165,12 +152,13 @@ SimpleStmt: Stmt = {
 
 /// Exp ::= LOrExp
 Exp: Exp = {
-     <LOrExp> => Exp(<>),
+     <LOrExp> => Exp::LOrExp(<>),
 };
 
-/// LVal ::= IDENT
+/// LVal ::= IDENT ["[" Exp "]"]
 LVal: LVal = {
-    <Ident> => LVal(<>),
+    <Ident> => LVal::Ident(<>),
+    <Ident> "[" <Exp> "]" => LVal::ArrayElem(<>),
 };
 
 /// PrimaryExp ::= "(" Exp ")" | Number | LVal
@@ -276,6 +264,3 @@ LOrExp: LOrExp = {
         Box::new(exp), Box::new(land),
     ),
 };
-
-/// ConstExp ::= Exp
-ConstExp: ConstExp = <Exp> => ConstExp(<>);

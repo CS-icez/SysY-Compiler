@@ -4,10 +4,10 @@ use koopa::ir::{ValueKind::*, *};
 use std::collections::HashMap;
 
 pub struct FuncMeta {
-    frame_size: u32,
-    offset: HashMap<Value, u32>,
+    frame_size: usize,
+    offset: HashMap<Value, usize>,
     is_leaf: bool,
-    arg_size: u32,
+    arg_size: usize,
 }
 
 impl FuncMeta {
@@ -22,13 +22,13 @@ impl FuncMeta {
     }
 
     /// Returns the frame size of the function, in terms of bytes.
-    pub fn frame_size(&self) -> u32 {
+    pub fn frame_size(&self) -> usize {
         self.frame_size
     }
 
     /// Returns the offset of the given value, in terms of bytes.
-    pub fn offset(&self, value: Value) -> u32 {
-        *self.offset.get(&value).unwrap()
+    pub fn offset(&self, value: Value) -> Option<usize> {
+        self.offset.get(&value).copied()
     }
 
     /// Returns whether the function is a leaf node, i.e.,
@@ -39,7 +39,7 @@ impl FuncMeta {
 
     /// Returns the frame size reserved for function call arguments,
     /// in terms of bytes.
-    pub fn arg_size(&self) -> u32 {
+    pub fn arg_size(&self) -> usize {
         self.arg_size
     }
 
@@ -55,16 +55,18 @@ impl FuncMeta {
 
 impl From<&FunctionData> for FuncMeta {
     fn from(func: &FunctionData) -> Self {
-        const MAX_ARG_NUM_IN_REG: u32 = 8;
+        const MAX_ARG_NUM_IN_REG: usize = 8;
         let mut res = Self::new();
         let values = Self::func_values(func);
+
         let kind = |handle| func.dfg().value(handle).kind();
+        let size = |handle| func.dfg().value(handle).ty().size();
 
         // Reserve frame for variables.
         values.iter().for_each(|&handle| {
             if let Alloc(_) = kind(handle) {
                 res.offset.insert(handle, res.frame_size);
-                res.frame_size += 4;
+                res.frame_size += size(handle);
             }
         });
 
@@ -96,7 +98,7 @@ impl From<&FunctionData> for FuncMeta {
         let arg_num = values
             .iter()
             .map(|&handle| match kind(handle) {
-                Call(call) => call.args().len() as u32,
+                Call(call) => call.args().len() as usize,
                 _ => 0,
             })
             .max()

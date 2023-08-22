@@ -1,8 +1,11 @@
 //! Build RISCV instructions from Koopa IR values.
 
+use std::collections::LinkedList;
+
 use super::RiscvBuilder;
-use crate::backend::riscv::{Inst, Reg};
+use crate::backend::riscv::{Inst, MemFill, Reg};
 use koopa::ir::entities::*;
+use koopa::ir::values::Aggregate;
 
 macro_rules! push_inst {
     ($self:tt, Inst::$T:ident, Binary, $rd:expr, $rhs:expr, $lhs:expr) => {
@@ -47,10 +50,34 @@ impl RiscvBuilder<'_> {
         Some(rd)
     }
 
+    pub fn build_aggregate(&mut self, arr: Value, agg: &Aggregate) -> LinkedList<MemFill> {
+        use MemFill::*;
+        let mut res = LinkedList::new();
+
+        agg.elems().iter().for_each(|&value| {
+            let data = self.koopa_prog().borrow_value(value);
+            let kind = data.kind();
+            let value = if let ValueKind::Integer(int) = kind {
+                int.value()
+            } else {
+                panic!("Invalid init value");
+            };
+            res.push_back(Word(value));
+        });
+
+        let arr_size = self.koopa_prog().borrow_value(arr).ty().size();
+        let agg_size = agg.elems().len() * 4;
+        if agg_size < arr_size {
+            res.push_back(Zero(arr_size - agg_size));
+        }
+
+        res
+    }
+
     // NOTE: Specifying destination register is not supported.
     pub fn build_func_arg_ref(&mut self, value: Value) -> Option<Reg> {
         let arg_ref = to_arm!(self, value, FuncArgRef);
-        let idx = arg_ref.index() as u32;
+        let idx = arg_ref.index() as usize;
         if idx < 8 {
             Some(RiscvBuilder::ARG_REGS[idx as usize])
         } else {
@@ -70,30 +97,43 @@ impl RiscvBuilder<'_> {
             let label = self.global_var_name(src).to_string();
             self.push_inst(Inst::La { rd, label });
             self.build_lw(rd, 0, rd);
-        } else {
+        } else if self.is_local_var(src) {
             let imm = self.offset(src) as i32;
             self.build_lw(rd, imm, "sp");
+        } else {
+            let rs = self.move_inst(src, None);
+            self.build_lw(rd, 0, rs);
+            self.free_reg(src, rs);
         }
 
         Some(rd)
     }
 
     pub fn build_global_alloc(&mut self, value: Value) {
+        use MemFill::*;
+        use ValueKind::*;
         let value_data = self.koopa_prog().borrow_value(value);
-        let ValueKind::GlobalAlloc(alloc) = value_data.kind() else {
+        let GlobalAlloc(alloc) = value_data.kind() else {
             panic!("Unexpected value kind");
         };
 
         // HACK: Have to nest `data` and `kind` in a block, or else won't compile.
         let init = {
-            let data = self.global_value_data(alloc.init());
+            let data = self.koopa_prog().borrow_value(alloc.init());
             let kind = data.kind();
+            let mut res = LinkedList::new();
 
             match kind {
-                ValueKind::Integer(int) => int.value(),
-                ValueKind::ZeroInit(..) => 0,
+                Integer(int) => res.push_back(Word(int.value())),
+                ZeroInit(..) => res.push_back(Zero(value_data.ty().size())),
+                Aggregate(elems) => {
+                    let mut list = self.build_aggregate(value, elems);
+                    res.append(&mut list);
+                }
                 _ => panic!("Invalid init value"),
             }
+
+            res
         };
         self.push_global_def(value, init);
     }
@@ -111,12 +151,42 @@ impl RiscvBuilder<'_> {
             });
             self.build_sw(rs, 0, "t0");
             self.free_reg(src, rs);
-        } else {
+        } else if self.is_local_var(dst){
             let imm = self.offset(dst) as i32;
             self.build_sw(rs, imm, "sp");
             self.free_reg(src, rs);
+        } else { // A temporary pointer.
+            let rd = self.move_inst(dst, None);
+            self.build_sw(rs, 0, rd);
+            self.free_reg(src, rs);
+            self.free_reg(dst, rd);
         }
         None
+    }
+
+    pub fn build_get_elem_ptr(&mut self, value: Value, dst: Option<Reg>) -> Option<Reg> {
+        let gep = to_arm!(self, value, GetElemPtr);
+        let src = gep.src();
+        let index = gep.index();
+        let rd = self.alloc_reg(value, dst);
+
+        if self.is_global_var(src) {
+            self.push_inst(Inst::La {
+                rd,
+                label: self.global_var_name(src).to_string(),
+            });
+        } else {
+            let imm = self.offset(src) as i32;
+            self.build_addi(rd, "sp", imm);
+        }
+
+        let idx = self.move_inst(index, None);
+        self.build_muli(idx, idx, 4);
+        push_inst!(self, Inst::Add, Binary, rd, idx, rd);
+
+        self.free_reg(index, idx);
+
+        Some(rd)
     }
 
     pub fn build_binary(&mut self, value: Value, dst: Option<Reg>) -> Option<Reg> {

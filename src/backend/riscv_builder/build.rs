@@ -62,6 +62,7 @@ impl<'a> RiscvBuilder<'a> {
             Alloc(_) => None, // Alloc has been translated to stack offset.
             Load(_) => self.build_load(value, dst),
             Store(_) => self.build_store(value),
+            GetElemPtr(_) => self.build_get_elem_ptr(value, dst),
             Binary(_) => self.build_binary(value, dst),
             Branch(_) => self.build_branch(value),
             Jump(_) => self.build_jump(value),

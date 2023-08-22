@@ -53,8 +53,8 @@ impl BuildFrom<CompUnit> for KoopaTextBuilder {
     fn build_from(&mut self, comp_unit: &CompUnit, _: bool) -> String {
         use CompUnit::*;
         match comp_unit {
-            GlobalDecl(global_decl) => {
-                self.build_from(global_decl, false);
+            VarDecl(var_decl) => {
+                self.build_from(var_decl, false);
             }
             FuncDef(func_def) => {
                 self.build_from(func_def, false);
@@ -63,6 +63,92 @@ impl BuildFrom<CompUnit> for KoopaTextBuilder {
         null!()
     }
 }
+
+// Variable declaration.
+
+impl BuildFrom<VarDecl> for KoopaTextBuilder {
+    fn build_from(&mut self, decl: &VarDecl, _: bool) -> String {
+        use VarDef::*;
+        let is_global = decl.is_global;
+        let is_const = decl.is_const;
+
+        decl.var_defs.iter().for_each(|decl| {
+            match decl {
+                Scalar(ident, opt_init) => {
+                    if is_const {
+                        return;
+                    }
+                    if is_global {
+                        let value = if let Some(init) = opt_init {
+                            self.build_from(init, true)
+                        } else {
+                            "zeroinit".to_string()
+                        };
+                        push_text!(self, "global {ident} = alloc i32, {value}\n");
+                        return;
+                    }
+                    push_text!(self, "{ident} = alloc i32\n");
+                    if let Some(init) = opt_init {
+                        let value = self.build_from(init, true);
+                        push_text!(self, "store {value}, {ident}\n");
+                    }
+                }
+                Array(ident, sizes, opt_inits) => {
+                    let size = self.build_from(&sizes[0], true);
+                    let arr_size = usize::from_str_radix(&size, 10).unwrap();
+
+                    if is_global {
+                        let text = if let Some(inits) = opt_inits {
+                            let fill_num = arr_size - inits.len();
+                            let mut fill = vec!["0".to_string(); fill_num];
+                            let mut init_vec = inits
+                                .iter()
+                                .map(|init| self.build_from(init, true))
+                                .collect::<Vec<_>>();
+                            init_vec.append(&mut fill);
+                            "{".to_string()
+                                + init_vec.join(", ").as_ref()
+                                + "}"
+                        } else {
+                            "zeroinit".to_string()
+                        };
+                        push_text!(self, "global {ident} = alloc [i32, {size}], {text}\n");
+                        return;
+                    }
+
+                    push_text!(self, "{ident} = alloc [i32, {size}]\n");
+                    if let Some(inits) = opt_inits {
+                        (0..arr_size).for_each(|i| {
+                            let ptr = self.make_token("%ptr_");
+                            let value = if i < inits.len() {
+                                self.build_from(&inits[i], true)
+                            } else {
+                                "0".to_string()
+                            };
+                            push_text!(self, "{ptr} = getelemptr {ident}, {i}\n");
+                            push_text!(self, "store {value}, {ptr}\n");
+                        });
+                    }
+                }
+            }
+        });
+
+        null!()
+    }
+}
+
+impl BuildFrom<BType> for KoopaTextBuilder {
+    fn build_from(&mut self, btype: &BType, _: bool) -> String {
+        use BType::*;
+        match btype {
+            Int => ": i32",
+            Void => "",
+        }
+        .to_string()
+    }
+}
+
+// Function definition.
 
 impl BuildFrom<FuncDef> for KoopaTextBuilder {
     fn build_from(&mut self, func_def: &FuncDef, _: bool) -> String {
@@ -91,7 +177,7 @@ impl BuildFrom<FuncDef> for KoopaTextBuilder {
         // Build function body.
         self.build_from(&func_def.3, false);
 
-        // Hack:
+        // HACK:
         // In my implementation, the last return in a function always leaves
         // a dangling label. As I generate Koopa text in one pass, it is hard
         // to address this problem normally. Here is the workaround:
@@ -114,6 +200,8 @@ impl BuildFrom<FuncFParam> for KoopaTextBuilder {
     }
 }
 
+// Block.
+
 impl BuildFrom<Block> for KoopaTextBuilder {
     fn build_from(&mut self, block: &Block, _: bool) -> String {
         block.0.iter().for_each(|item| { self.build_from(item, false); });
@@ -121,22 +209,48 @@ impl BuildFrom<Block> for KoopaTextBuilder {
     }
 }
 
+impl BuildFrom<BlockItem> for KoopaTextBuilder {
+    fn build_from(&mut self, block_item: &BlockItem, _: bool) -> String {
+        use BlockItem::*;
+        match block_item {
+            Stmt(stmt) => self.build_from(stmt, false),
+            VarDecl(decl) => self.build_from(decl, false),
+        }
+    }
+}
+
+// Statement.
+
 impl BuildFrom<Stmt> for KoopaTextBuilder {
     fn build_from(&mut self, stmt: &Stmt, _: bool) -> String {
         use Stmt::*;
+        use LVal::*;
         match stmt {
             Assign(lval, exp) => {
                 let src = self.build_from(exp, true);
-                let ident = &lval.0;
-                push_text!(self, "{TAB}store {src}, {ident}\n");
+                match lval {
+                    Ident(ident) => {
+                        push_text!(self, "{TAB}store {src}, {ident}\n");
+                    }
+                    ArrayElem(ident, exp) => {
+                        let idx = self.build_from(exp, true);
+                        let ptr = self.make_num();
+                        push_text!(self, "{TAB}{ptr} = getelemptr {ident}, {idx}\n");
+                        push_text!(self, "{TAB}store {src}, {ptr}\n");
+                    }
+                }
             }
+
             Empty => {}
+
             Exp(exp) => {
                 self.build_from(exp, false);
             }
+
             Block(block) => {
                 self.build_from(block, false);
             }
+
             If(exp, stmt, opt_stmt) => {
                 let src = self.build_from(exp, true);
                 let then = self.make_token("%then_");
@@ -172,6 +286,7 @@ impl BuildFrom<Stmt> for KoopaTextBuilder {
                     push_text!(self, "{endif}:\n");
                 }
             }
+
             While(exp, stmt) => {
                 //     jump entry
                 // entry:
@@ -194,18 +309,21 @@ impl BuildFrom<Stmt> for KoopaTextBuilder {
                 push_text!(self, "{end}:\n");
                 self.exit_loop();
             }
+
             Break => {
                 let label = self.cur_end_label();
                 push_text!(self, "{TAB}jump {label}\n");
                 let label = self.make_koopa();
                 push_text!(self, "{label}:\n");
             }
+
             Continue => {
                 let label = self.cur_cond_label();
                 push_text!(self, "{TAB}jump {label}\n");
                 let label = self.make_koopa();
                 push_text!(self, "{label}:\n");
             }
+
             Return(exp) => {
                 let dst = self.build_from(exp, true);
                 push_text!(self, "{TAB}ret {dst}\n");
@@ -217,15 +335,39 @@ impl BuildFrom<Stmt> for KoopaTextBuilder {
     }
 }
 
-impl BuildFrom<Number> for KoopaTextBuilder {
-    fn build_from(&mut self, number: &Number, _: bool) -> String {
-        number.0.to_string()
-    }
-}
+// Expression.
 
 impl BuildFrom<Exp> for KoopaTextBuilder {
     fn build_from(&mut self, exp: &Exp, used: bool) -> String {
-        self.build_from(&exp.0, used)
+        use Exp::*;
+        match exp {
+            LOrExp(exp) => self.build_from(exp, used),
+            Number(number) => self.build_from(number, used),
+        }
+    }
+}
+
+impl BuildFrom<LVal> for KoopaTextBuilder {
+    fn build_from(&mut self, lval: &LVal, used: bool) -> String {
+        use LVal::*;
+        if !used {
+            return null!();
+        }
+        match lval {
+            Ident(ident) => {
+                let dst = self.make_num();
+                push_text!(self, "{TAB}{dst} = load {ident}\n");
+                dst
+            }
+            ArrayElem(ident, exp) => {
+                let idx = self.build_from(exp, true);
+                let ptr = self.make_token("%ptr_");
+                push_text!(self, "{TAB}{ptr} = getelemptr {ident}, {idx}\n");
+                let dst = self.make_num();
+                push_text!(self, "{TAB}{dst} = load {ptr}\n");
+                dst
+            }
+        }
     }
 }
 
@@ -237,6 +379,12 @@ impl BuildFrom<PrimaryExp> for KoopaTextBuilder {
             Number(number) => self.build_from(number, used),
             LVal(lval) => self.build_from(lval, used),
         }
+    }
+}
+
+impl BuildFrom<Number> for KoopaTextBuilder {
+    fn build_from(&mut self, number: &Number, _: bool) -> String {
+        number.0.to_string()
     }
 }
 
@@ -431,113 +579,5 @@ impl BuildFrom<LOrExp> for KoopaTextBuilder {
                 dst
             }
         }
-    }
-}
-
-impl BuildFrom<GlobalDecl> for KoopaTextBuilder {
-    fn build_from(&mut self, global_decl: &GlobalDecl, _: bool) -> String {
-        use Decl::*;
-        use VarDef::*;
-        let decl = &global_decl.0;
-        match decl {
-            ConstDecl(_) => {}
-            VarDecl(var_decl) => {
-                var_decl.1.iter().for_each(|def| {
-                    match def {
-                        Init(ident, init_val) => {
-                            let val = self.build_from(init_val, true);
-                            push_text!(self, "global {ident} = alloc i32, {val}\n");
-                            push_text!(self, "\n");
-                        }
-                        NoInit(ident) => {
-                            push_text!(self, "global {ident} = alloc i32, zeroinit\n");
-                            push_text!(self, "\n");
-                        }
-                    }
-                });
-            }
-        }
-        null!()
-    }
-}
-
-impl BuildFrom<Decl> for KoopaTextBuilder {
-    fn build_from(&mut self, decl: &Decl, _: bool) -> String {
-        use Decl::*;
-        match decl {
-            ConstDecl(const_decl) => self.build_from(const_decl, false),
-            VarDecl(var_decl) => self.build_from(var_decl, false),
-        }
-    }
-}
-
-impl BuildFrom<ConstDecl> for KoopaTextBuilder {
-    fn build_from(&mut self, _: &ConstDecl, _: bool) -> String {
-        null!()
-    }
-}
-
-impl BuildFrom<BType> for KoopaTextBuilder {
-    fn build_from(&mut self, btype: &BType, _: bool) -> String {
-        use BType::*;
-        match btype {
-            Int => ": i32",
-            Void => "",
-        }
-        .to_string()
-    }
-}
-
-impl BuildFrom<VarDecl> for KoopaTextBuilder {
-    fn build_from(&mut self, var_decl: &VarDecl, _: bool) -> String {
-        var_decl.1.iter().for_each(|def| { self.build_from(def, false); });
-        null!()
-    }
-}
-
-impl BuildFrom<VarDef> for KoopaTextBuilder {
-    fn build_from(&mut self, var_def: &VarDef, _: bool) -> String {
-        match var_def {
-            VarDef::Init(ident, init_val) => {
-                let src = self.build_from(init_val, true);
-                push_text!(self, "{TAB}{ident} = alloc i32\n");
-                push_text!(self, "{TAB}store {src}, {ident}\n");
-            }
-            VarDef::NoInit(ident) => {
-                push_text!(self, "{TAB}{ident} = alloc i32\n");
-            }
-        }
-        null!()
-    }
-}
-
-impl BuildFrom<InitVal> for KoopaTextBuilder {
-    fn build_from(&mut self, init_val: &InitVal, used: bool) -> String {
-        match init_val {
-            InitVal::Exp(exp) => self.build_from(exp, used),
-            InitVal::Number(number) => self.build_from(number, used),
-        }
-    }
-}
-
-impl BuildFrom<BlockItem> for KoopaTextBuilder {
-    fn build_from(&mut self, block_item: &BlockItem, _: bool) -> String {
-        use BlockItem::*;
-        match block_item {
-            Stmt(stmt) => self.build_from(stmt, false),
-            Decl(decl) => self.build_from(decl, false),
-        }
-    }
-}
-
-impl BuildFrom<LVal> for KoopaTextBuilder {
-    fn build_from(&mut self, lval: &LVal, used: bool) -> String {
-        if !used {
-            return null!();
-        }
-        let ident = &lval.0;
-        let dst = self.make_num();
-        push_text!(self, "{TAB}{dst} = load {ident}\n");
-        dst
     }
 }

@@ -7,27 +7,23 @@ pub trait Eval<T> {
     fn eval(&self, target: &T) -> i32;
 }
 
-impl Eval<ConstInitVal> for SemAnalyzer {
-    fn eval(&self, target: &ConstInitVal) -> i32 {
-        self.eval(&target.0)
-    }
-}
-
-impl Eval<ConstExp> for SemAnalyzer {
-    fn eval(&self, exp: &ConstExp) -> i32 {
-        self.eval(&exp.0)
-    }
-}
-
-impl Eval<Number> for SemAnalyzer {
-    fn eval(&self, num: &Number) -> i32 {
-        num.0
-    }
-}
-
 impl Eval<Exp> for SemAnalyzer {
     fn eval(&self, exp: &Exp) -> i32 {
-        self.eval(&exp.0)
+        if let Exp::LOrExp(exp) = exp {
+            self.eval(exp)
+        } else {
+            panic!("Unexpected arm");
+        }
+    }
+}
+
+impl Eval<LVal> for SemAnalyzer {
+    fn eval(&self, lval: &LVal) -> i32 {
+        if let LVal::Ident(ident) = lval {
+            self.value(ident)
+        } else {
+            panic!("Unexpected arm");
+        }
     }
 }
 
@@ -39,6 +35,12 @@ impl Eval<PrimaryExp> for SemAnalyzer {
             Number(num) => self.eval(num),
             LVal(lval) => self.eval(lval),
         }
+    }
+}
+
+impl Eval<Number> for SemAnalyzer {
+    fn eval(&self, num: &Number) -> i32 {
+        num.0
     }
 }
 
@@ -130,19 +132,3 @@ impl_eval_binary_op!(EqExp, Rel, EqOpRel, EqOp,
 impl_eval_binary_op!(LAndExp, Eq, LAndEq, (|x, y| (x != 0 && y != 0) as i32));
 
 impl_eval_binary_op!(LOrExp, LAnd, LOrLAnd, (|x, y| (x != 0 || y != 0) as i32));
-
-impl Eval<InitVal> for SemAnalyzer {
-    fn eval(&self, target: &InitVal) -> i32 {
-        use InitVal::*;
-        match target {
-            Exp(exp) => self.eval(exp),
-            Number(_) => panic!("Unexpected arm"),
-        }
-    }
-}
-
-impl Eval<LVal> for SemAnalyzer {
-    fn eval(&self, lval: &LVal) -> i32 {
-        self.value(&lval.0)
-    }
-}

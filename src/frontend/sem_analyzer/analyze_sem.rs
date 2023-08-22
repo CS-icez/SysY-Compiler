@@ -23,9 +23,58 @@ impl Analyze<CompUnit> for SemAnalyzer {
     fn analyze(&mut self, comp_unit: &mut CompUnit) {
         use CompUnit::*;
         match comp_unit {
-            GlobalDecl(global_decl) => self.analyze(global_decl),
+            VarDecl(var_decl) => self.analyze(var_decl),
             FuncDef(func_def) => self.analyze(func_def),
         }
+    }
+}
+
+
+impl Analyze<VarDecl> for SemAnalyzer {
+    fn analyze(&mut self, decl: &mut VarDecl) {
+        use VarDef::*;
+        let is_global = decl.is_global;
+        let is_const = decl.is_const;
+
+        decl.var_defs.iter_mut().for_each(|def| {
+            match def {
+                Scalar(ident, opt_init) => {
+                    if is_const {
+                        let value = self.eval(opt_init.as_ref().unwrap());
+                        self.insert_const_int(ident.clone(), value);
+                        return;
+                    }
+                    self.insert_int(ident.clone());
+                    self.mangle(ident);
+                    if let Some(init) = opt_init {
+                        if is_global {
+                            let value = self.eval(init);
+                            Self::fold_exp(init, value);
+                        } else {
+                            self.update(init);
+                        }
+                    }
+                }
+                Array(ident, sizes, opt_inits) => {
+                    self.insert_int_array(ident.clone());
+                    self.mangle(ident);
+                    sizes.iter_mut().for_each(|size| {
+                        let value = self.eval(size);
+                        Self::fold_exp(size, value);
+                    });
+                    if let Some(inits) = opt_inits {
+                        inits.iter_mut().for_each(|init| {
+                            if is_global || is_const {
+                                let value = self.eval(init);
+                                Self::fold_exp(init, value);
+                            } else {
+                                self.update(init);
+                            }
+                        });
+                    }
+                }
+            }
+        });
     }
 }
 
@@ -34,7 +83,7 @@ impl Analyze<FuncDef> for SemAnalyzer {
         // Record and update parameters.
         func_def.2.iter_mut().for_each(|param| {
             self.insert_int(param.1.clone());
-            param.1 = self.to_mangled(&param.1);
+            self.mangle(&mut param.1);
         });
         // Analyze function body.
         self.analyze(&mut func_def.3);
@@ -46,6 +95,16 @@ impl Analyze<Block> for SemAnalyzer {
         self.enter_scope();
         block.0.iter_mut().for_each(|item| self.analyze(item));
         self.exit_scope();
+    }
+}
+
+impl Analyze<BlockItem> for SemAnalyzer {
+    fn analyze(&mut self, block_item: &mut BlockItem) {
+        use BlockItem::*;
+        match block_item {
+            Stmt(stmt) => self.analyze(stmt),
+            VarDecl(decl) => self.analyze(decl),
+        }
     }
 }
 
@@ -74,91 +133,6 @@ impl Analyze<Stmt> for SemAnalyzer {
             Break => {}
             Continue => {}
             Return(exp) => self.update(exp),
-        }
-    }
-}
-
-impl Analyze<GlobalDecl> for SemAnalyzer {
-    fn analyze(&mut self, global_decl: &mut GlobalDecl) {
-        use Decl::*;
-        use VarDef::*;
-        match &mut global_decl.0 {
-            ConstDecl(const_decl) => self.analyze(const_decl),
-            VarDecl(var_decl) => {
-                var_decl.1.iter_mut().for_each(|def| {
-                    match def {
-                        NoInit(name) => {
-                            self.insert_int(name.to_string());
-                            *name = self.to_mangled(name);
-                        }
-                        Init(name, init_val) => {
-                            self.insert_int(name.to_string());
-                            *name = self.to_mangled(name);
-                            let value = self.eval(init_val);
-                            *init_val = InitVal::Number(Number(value));
-                        }
-                    }
-                });
-            }
-        }
-    }
-}
-
-impl Analyze<Decl> for SemAnalyzer {
-    fn analyze(&mut self, decl: &mut Decl) {
-        use Decl::*;
-        match decl {
-            ConstDecl(const_decl) => self.analyze(const_decl),
-            VarDecl(var_decl) => self.analyze(var_decl),
-        }
-    }
-}
-
-impl Analyze<ConstDecl> for SemAnalyzer {
-    fn analyze(&mut self, const_decl: &mut ConstDecl) {
-        const_decl.1.iter_mut().for_each(|def| self.analyze(def));
-    }
-}
-
-impl Analyze<ConstDef> for SemAnalyzer {
-    fn analyze(&mut self, const_def: &mut ConstDef) {
-        let name = const_def.0.clone();
-        let value = self.eval(&const_def.1);
-        self.insert_const_int(name, value);
-    }
-}
-
-impl Analyze<VarDecl> for SemAnalyzer {
-    // Local variable declaration.
-    fn analyze(&mut self, var_decl: &mut VarDecl) {
-        var_decl.1.iter_mut().for_each(|def| self.analyze(def));
-    }
-}
-
-impl Analyze<VarDef> for SemAnalyzer {
-    // Local variable definition.
-    fn analyze(&mut self, var_def: &mut VarDef) {
-        use VarDef::*;
-        match var_def {
-            NoInit(name) => {
-                self.insert_int(name.to_string());
-                *name = self.to_mangled(name);
-            }
-            Init(name, init_val) => {
-                self.insert_int(name.to_string());
-                self.update(init_val);
-                *name = self.to_mangled(name);
-            }
-        }
-    }
-}
-
-impl Analyze<BlockItem> for SemAnalyzer {
-    fn analyze(&mut self, block_item: &mut BlockItem) {
-        use BlockItem::*;
-        match block_item {
-            Stmt(stmt) => self.analyze(stmt),
-            Decl(decl) => self.analyze(decl),
         }
     }
 }

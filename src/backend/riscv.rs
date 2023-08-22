@@ -9,9 +9,14 @@ pub struct Program {
     pub funcs: LinkedList<Func>,
 }
 
+pub enum MemFill {
+    Word(i32),
+    Zero(usize),
+}
+
 pub struct GlobalDef {
     pub name: String,
-    pub init: i32,
+    pub init: LinkedList<MemFill>,
 }
 
 pub struct Func {

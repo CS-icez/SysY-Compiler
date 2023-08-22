@@ -7,39 +7,26 @@
 pub struct Program(pub Vec<CompUnit>);
 
 pub enum CompUnit {
-    GlobalDecl(GlobalDecl),
+    VarDecl(VarDecl),
     FuncDef(FuncDef),
 }
 
 // Variable declaration.
 
-pub struct GlobalDecl(pub Decl);
-
-pub enum Decl {
-    ConstDecl(ConstDecl),
-    VarDecl(VarDecl),
+pub struct VarDecl {
+    pub is_global: bool,
+    pub is_const: bool,
+    pub btype: BType,
+    pub var_defs: Vec<VarDef>,
 }
-
-pub struct ConstDecl(pub BType, pub Vec<ConstDef>);
 
 pub enum BType {
     Int, Void,
 }
 
-pub struct ConstDef(pub String, pub ConstInitVal);
-
-pub struct ConstInitVal(pub ConstExp);
-
-pub struct VarDecl(pub BType, pub Vec<VarDef>);
-
 pub enum VarDef {
-    NoInit(String),
-    Init(String, InitVal),
-}
-
-pub enum InitVal {
-    Exp(Exp),
-    Number(Number), // This arm not used in parsing.
+    Scalar(String, Option<Exp>),
+    Array(String, Vec<Exp>, Option<Vec<Exp>>),
 }
 
 // Function definition.
@@ -53,7 +40,7 @@ pub struct FuncFParam(pub BType, pub String);
 pub struct Block(pub Vec<BlockItem>);
 
 pub enum BlockItem {
-    Decl(Decl),
+    VarDecl(VarDecl),
     Stmt(Stmt),
 }
 
@@ -73,9 +60,15 @@ pub enum Stmt {
 
 // Expression.
 
-pub struct Exp(pub LOrExp);
+pub enum Exp {
+    LOrExp(LOrExp),
+    Number(Number), // This arm not used in parsing.
+}
 
-pub struct LVal(pub String);
+pub enum LVal {
+    Ident(String),
+    ArrayElem(String, Exp),
+}
 
 pub enum PrimaryExp {
     BracketedExp(Box<Exp>),
@@ -140,5 +133,3 @@ pub enum LOrExp {
     LAnd(Box<LAndExp>),
     LOrLAnd(Box<LOrExp>, Box<LAndExp>),
 }
-
-pub struct ConstExp(pub Exp);

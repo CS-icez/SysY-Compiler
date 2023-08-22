@@ -28,11 +28,17 @@ impl BuildFrom<Program> for RiscvTextBuilder {
 
 impl BuildFrom<GlobalDef> for RiscvTextBuilder {
     fn build_from(&mut self, global_def: &GlobalDef) {
+        use MemFill::*;
         let name = &global_def.name;
-        let init = global_def.init;
+        let init = &global_def.init;
         push_text!(self, "{TAB}.globl {name}\n");
         push_text!(self, "{name}:\n");
-        push_text!(self, "{TAB}.word {init}\n");
+        init.iter().for_each(|fill| {
+            match fill {
+                Word(value) => push_text!(self, "{TAB}.word {value}\n"),
+                Zero(size) => push_text!(self, "{TAB}.zero {size}\n"),
+            }
+        });
         push_text!(self, "\n");
     }
 }

@@ -9,7 +9,7 @@ mod koopa_text_builder;
 
 use crate::frontend::ast;
 use koopa::front::Driver;
-use koopa::ir::entities;
+use koopa::ir::{entities, Type};
 use koopa_text_builder::KoopaTextBuilder;
 
 impl ast::Program {
@@ -21,6 +21,7 @@ impl ast::Program {
     /// Converts an AST to Koopa in-memory program.
     pub fn to_koopa_program(&self) -> entities::Program {
         let text = self.to_koopa_text();
+        Type::set_ptr_size(4); // Simulating 32-bit machine.
         Driver::from(text)
             .generate_program()
             .expect("Invalid Koopa text")

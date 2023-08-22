@@ -103,14 +103,14 @@ impl<'a:'r, 'r> RiscvBuilder<'a> {
     // Wrappers of `FuncMeta`.
 
     /// Returns the frame size of the current function.
-    fn frame_size(&self) -> u32 {
+    fn frame_size(&self) -> usize {
         self.func_meta.frame_size()
     }
 
     /// Returns the stack offset of the given local variable
     /// in the current function.
-    fn offset(&self, value: Value) -> u32 {
-        self.func_meta.offset(value)
+    fn offset(&self, value: Value) -> usize {
+        self.func_meta.offset(value).unwrap()
     }
 
     /// Returns whether the current function is a leaf node.
@@ -140,6 +140,8 @@ impl<'a:'r, 'r> RiscvBuilder<'a> {
     }
 
     /// Returns the data of the given global value.
+    /// DO NOT CALL THIS FUNCTION FROM OUTSIDE. WIELD THINGS HAPPEN.
+    /// I DON'T UNDERSTAND WHY.
     fn global_value_data(&self, value: Value) -> Ref<ValueData> {
         self.koopa_prog().borrow_value(value)
     }
@@ -185,6 +187,12 @@ impl<'a:'r, 'r> RiscvBuilder<'a> {
         self.koopa_prog().inst_layout().contains(&value)
     }
 
+    /// Returns whether the given value is a local variable
+    /// of the current function.
+    fn is_local_var(&self, value: Value) -> bool {
+        self.func_meta.offset(value) != None
+    }
+
     /// Returns whether the given local value is used as a function argument.
     /// The given value must fall in the current function.
     fn is_arg(&self, value: Value) -> bool {
@@ -209,7 +217,7 @@ impl<'a:'r, 'r> RiscvBuilder<'a> {
     }
 
     /// Appends a new global variable definition to the program.
-    fn push_global_def(&mut self, var: Value, init: i32) {
+    fn push_global_def(&mut self, var: Value, init: LinkedList<riscv::MemFill>) {
         self.prog.global_defs.push_back(riscv::GlobalDef {
             name: self.global_var_name(var).to_string(),
             init,

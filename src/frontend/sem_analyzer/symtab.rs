@@ -12,6 +12,7 @@ pub enum Symbol {
     // Token is used as mangled name.
     Int { token: String },
     ConstInt { token: String, value: i32 },
+    IntArray { token: String },
 }
 
 pub struct SymTab {

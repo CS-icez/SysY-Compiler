@@ -48,6 +48,11 @@ impl RiscvBuilder<'_> {
         }
     }
 
+    pub fn build_muli(&mut self, rd: Reg, rs: Reg, imm: i32) {
+        self.push_inst(Li { rd: t0, imm });
+        self.push_inst(Mul { rd, rs1: rs, rs2: t0 });
+    }
+
     // TODO: coming up with a more suitable name.
     fn move_inst_to(&mut self, inst: Value, dst: Option<Reg>) -> Reg {
         let rs = self.reg_mgr.reg(inst);
