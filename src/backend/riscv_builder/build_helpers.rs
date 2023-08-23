@@ -18,7 +18,8 @@ impl RiscvBuilder<'_> {
         if is_imm12(imm) {
             self.push_inst(Lw { rd, imm12: imm, rs });
         } else {
-            self.push_inst(Addi { rd: t0, rs, imm12: imm });
+            self.push_inst(Li { rd: t0, imm });
+            self.push_inst(Add { rd: t0, rs1: rs, rs2: t0 });
             self.push_inst(Lw { rd, imm12: 0, rs: t0 });
         }
     }
@@ -27,7 +28,8 @@ impl RiscvBuilder<'_> {
         if is_imm12(imm) {
             self.push_inst(Sw { rs, imm12: imm, rd });
         } else {
-            self.push_inst(Addi { rd: t0, rs: rd, imm12: imm });
+            self.push_inst(Li { rd: t0, imm });
+            self.push_inst(Add { rd: t0, rs1: rd, rs2: t0 });
             self.push_inst(Sw { rs, imm12: 0, rd: t0 });
         }
     }
@@ -92,9 +94,19 @@ impl RiscvBuilder<'_> {
     pub fn save_regs(&mut self) {
         let regs = self.reg_mgr.regs();
         let size = 4 * regs.len() as i32;
+
+        if size ==0 {
+            return;
+        }
+
         let off = self.func_meta.arg_size() as i32;
 
         self.build_addi("sp", "sp", -size);
+        let arg_num = off / 4;
+        (0..arg_num).for_each(|i| {
+            self.build_lw(t0, i as i32 * 4 + size, "sp");
+            self.build_sw(t0, i as i32 * 4, "sp");
+        });
         regs.iter().enumerate().for_each(|(i, reg)| {
             self.build_sw(reg, (i as i32) * 4 + off, "sp");
         });

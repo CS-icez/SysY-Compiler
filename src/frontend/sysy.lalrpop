@@ -28,6 +28,9 @@ Comma<T>: Vec<T> = {
 // Patterns like `[T][T][T]`, cannot be empty.
 Square<T>: Vec<T> = ("[" <T> "]")+;
 
+// Patterns like `[T][T][T]`, can be empty.
+SquOrEmpty<T>: Vec<T> = ("[" <T> "]")*;
+
 /// Program ::= CompUnit {CompUnit}
 pub Program: Program = {
     <CompUnit*> => Program(<>),
@@ -100,9 +103,10 @@ FuncDef: FuncDef = {
     <BType> <Ident> "(" <Comma<FuncFParam>> ")" <Block> => FuncDef(<>),
 };
 
-/// FuncFParam ::= BType IDENT
+/// FuncFParam ::= BType IDENT ["[" "]" {"[" ConstExp "]"}]
 FuncFParam: FuncFParam = {
-    <BType> <Ident> => FuncFParam(<>),
+    <BType> <Ident> => FuncFParam::Scalar(<>),
+    <BType> <Ident> "[" "]" <SquOrEmpty<Exp>> => FuncFParam::Array(<>),
 };
 
 /// Block ::= "{" {BlockItem} "}"
@@ -155,7 +159,7 @@ SimpleStmt: Stmt = {
     <Block> => Stmt::Block(<>),
     "break" ";" => Stmt::Break,
     "continue" ";" => Stmt::Continue,
-    "return" <Exp> ";" => Stmt::Return(<>),
+    "return" <Exp?> ";" => Stmt::Return(<>),
 };
 
 // Expression.

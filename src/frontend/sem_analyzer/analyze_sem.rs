@@ -77,13 +77,27 @@ impl Analyze<VarDecl> for SemAnalyzer {
 
 impl Analyze<FuncDef> for SemAnalyzer {
     fn analyze(&mut self, func_def: &mut FuncDef) {
-        // Record and update parameters.
-        func_def.2.iter_mut().for_each(|param| {
-            self.insert_int(param.1.clone());
-            self.mangle(&mut param.1);
-        });
-        // Analyze function body.
+        self.enter_scope();
+        func_def.2.iter_mut().for_each(|param| self.analyze(param));
         self.analyze(&mut func_def.3);
+        self.exit_scope();
+    }
+}
+
+impl Analyze<FuncFParam> for SemAnalyzer {
+    fn analyze(&mut self, param: &mut FuncFParam) {
+        use FuncFParam::*;
+        match param {
+            Scalar(_, ident) => {
+                self.insert_int(ident.clone());
+                self.mangle(ident);
+            }
+            Array(_, ident, exps) => {
+                self.insert_int_array(ident.clone());
+                self.mangle(ident);
+                exps.iter_mut().for_each(|exp| self.fold(exp));
+            }
+        }
     }
 }
 
@@ -129,7 +143,11 @@ impl Analyze<Stmt> for SemAnalyzer {
             }
             Break => {}
             Continue => {}
-            Return(exp) => self.update(exp),
+            Return(opt_exp) => {
+                if let Some(exp) = opt_exp {
+                    self.update(exp);
+                }
+            }
         }
     }
 }

@@ -126,7 +126,16 @@ impl RiscvBuilder<'_> {
 
             match kind {
                 Integer(int) => res.push_back(Word(int.value())),
-                ZeroInit(..) => res.push_back(Zero(value_data.ty().size())),
+                ZeroInit(..) => {
+                    let size = {
+                        if let TypeKind::Pointer(base) = value_data.ty().kind() {
+                            base.size()
+                        } else {
+                            panic!("Unexpected type kind");
+                        }
+                    };
+                    res.push_back(Zero(size));
+                }
                 Aggregate(agg) => {
                     let mut list = self.build_aggregate(agg);
                     res.append(&mut list);
@@ -165,6 +174,62 @@ impl RiscvBuilder<'_> {
         None
     }
 
+    pub fn build_get_ptr(&mut self, value: Value, dst: Option<Reg>) -> Option<Reg> {
+        let gp = to_arm!(self, value, GetPtr);
+        let src = gp.src();
+        let src_ty_kind = {
+            if src.is_global() {
+                let data = self.koopa_prog().borrow_value(src);
+                data.ty().kind().clone()
+            } else {
+                self.value_data(src).ty().kind().clone()
+            }
+        };
+        let base_size = match src_ty_kind {
+            TypeKind::Array(base, _) => base.size(),
+            TypeKind::Pointer(base) => base.size(),
+            _ => panic!("Unexpected type"),
+        };
+        let index = gp.index();
+        let rd;
+
+        if self.is_global_var(src) {
+            let idx = self.move_inst(index, None);
+            let off = self.alloc_reg(value, None);
+            self.build_muli(off, idx, base_size as i32);
+            self.free_reg(index, idx);
+            self.free_reg(value, off);
+            self.push_inst(Inst::La {
+                rd: t0,
+                label: self.global_var_name(src).to_string(),
+            });
+            rd = self.alloc_reg(value, dst);
+            push_inst!(self, Inst::Add, Binary, rd, t0, off);
+        } else if self.is_local_var(src) {
+            let idx = self.move_inst(index, None);
+            let off = self.alloc_reg(value, None);
+            self.build_muli(off, idx, base_size as i32);
+            self.free_reg(index, idx);
+            self.free_reg(value, off);
+            let imm = self.offset(src) as i32;
+            self.build_addi(t0, "sp", imm);
+            rd = self.alloc_reg(value, dst);
+            push_inst!(self, Inst::Add, Binary, rd, t0, off);
+        } else {
+            let rs = self.move_inst(src, None);
+            let idx = self.move_inst(index, None);
+            let off = self.alloc_reg(value, None);
+            self.build_muli(off, idx, base_size as i32);
+            self.free_reg(index, idx);
+            self.free_reg(value, off);
+            rd = self.alloc_reg(value, dst);
+            push_inst!(self, Inst::Add, Binary, rd, off, rs);
+            self.free_reg(src, rs);
+        }
+
+        Some(rd)
+    }
+
     pub fn build_get_elem_ptr(&mut self, value: Value, dst: Option<Reg>) -> Option<Reg> {
         let gep = to_arm!(self, value, GetElemPtr);
         let src = gep.src();
@@ -187,7 +252,7 @@ impl RiscvBuilder<'_> {
         };
         let index = gep.index();
         let rd;
-        
+
         if self.is_global_var(src) {
             let idx = self.move_inst(index, None);
             let off = self.alloc_reg(value, None);

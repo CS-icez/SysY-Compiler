@@ -28,7 +28,7 @@ fn main() {
 
     let res = match &mode[..] {
         "-koopa" => Program::from_sysy_text(&input).to_koopa_text(),
-        "-riscv" => {
+        "-riscv" | "-perf" => {
             let koopa = Program::from_sysy_text(&input).to_koopa_program();
             backend::riscv_text_from(&koopa)
         }

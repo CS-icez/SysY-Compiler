@@ -39,7 +39,10 @@ pub enum InitList {
 
 pub struct FuncDef(pub BType, pub String, pub Vec<FuncFParam>, pub Block);
 
-pub struct FuncFParam(pub BType, pub String);
+pub enum FuncFParam {
+    Scalar(BType, String),
+    Array(BType, String, Vec<Exp>),
+}
 
 // Block.
 
@@ -61,7 +64,7 @@ pub enum Stmt {
     While(Exp, Box<Stmt>),
     Break,
     Continue,
-    Return(Exp),
+    Return(Option<Exp>),
 }
 
 // Expression.

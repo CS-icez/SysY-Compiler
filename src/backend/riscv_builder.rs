@@ -150,7 +150,7 @@ impl<'a:'r, 'r> RiscvBuilder<'a> {
     fn global_var_name(&self, var: Value) -> String {
         self.global_value_data(var).name().as_ref().unwrap()[1..].to_string()
         //? I tried to return `&str` or `&String`, but it didn't work.
-        //? Too little I know about `Ref<T>`. 
+        //? Too little I know about `Ref<T>`.
         //? self.global_value_data(var).name().as_ref().unwrap().as_str()
     }
 

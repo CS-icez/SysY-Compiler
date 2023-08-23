@@ -19,6 +19,8 @@ pub struct KoopaTextBuilder {
     text: String,
     loop_meta: VecDeque<LoopMeta>, // Actually a stack.
     token_gen: HashMap<&'static str, TokenGenerator>,
+    arrays: HashMap<String, usize>,
+    pointers: HashMap<String, usize>,
 }
 
 impl KoopaTextBuilder {
@@ -37,6 +39,8 @@ impl KoopaTextBuilder {
             text: String::new(),
             loop_meta: VecDeque::new(),
             token_gen: HashMap::new(),
+            arrays: HashMap::new(),
+            pointers: HashMap::new(),
         }
     }
 
@@ -98,7 +102,7 @@ impl KoopaTextBuilder {
     /// Equivalent to `make_token("%tmp")`, serving as a shortcut.
     /// This is used for logical and/or expressions.
     fn make_tmp(&mut self) -> String {
-        self.make_token("%tmp")
+        self.make_token("%tmp_")
     }
 
     /// Equivalent to `make_token("%koopa_")`, serving as a shortcut.
@@ -110,6 +114,17 @@ impl KoopaTextBuilder {
 
     /// Resets the state of token generator.
     fn reset_tokens(&mut self) {
-        self.token_gen.clear();
+        let f = |gen: &mut TokenGenerator| {gen.reset(); Some(0) };
+        self.token_gen.get_mut("%").and_then(f);
+        self.token_gen.get_mut("%tmp_").and_then(f);
+        self.token_gen.get_mut("%ptr_").and_then(f);
+    }
+
+    fn is_array(&self, name: &str) -> bool {
+        self.arrays.contains_key(name)
+    }
+
+    fn is_pointer(&self, name: &str) -> bool {
+        self.pointers.contains_key(name)
     }
 }
