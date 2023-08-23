@@ -63,13 +63,14 @@ impl RegManager {
             None => Some(i),
         };
 
-        let mut range1 = 6..=7; // t1, t2
-        let mut range2 = 9..=9; // s1
-        let mut range3 = 18..=31; // s2-s11, t3-t6
+        let range_1 = 6..=7; // t1, t2
+        let range_2 = 9..=9; // s1
+        let range_3 = 18..=31; // s2-s11, t3-t6
 
-        range1
+        range_1
+            .chain(range_2)
+            .chain(range_3)
             .find_map(f)
-            .or_else(|| range2.find_map(f).or_else(|| range3.find_map(f)))
             .expect("All registers allocated")
     }
 

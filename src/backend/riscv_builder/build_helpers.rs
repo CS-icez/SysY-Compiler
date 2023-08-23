@@ -55,6 +55,7 @@ impl RiscvBuilder<'_> {
 
     // TODO: coming up with a more suitable name.
     fn move_inst_to(&mut self, inst: Value, dst: Option<Reg>) -> Reg {
+        // println!("inst: {inst:#?}");
         let rs = self.reg_mgr.reg(inst);
         if dst == None || dst == Some(rs) { // Optimization.
             return rs;

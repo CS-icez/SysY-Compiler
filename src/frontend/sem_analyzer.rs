@@ -2,6 +2,8 @@
 
 mod analyze_sem;
 mod eval;
+mod fold;
+mod flatten;
 mod symtab;
 mod update;
 
@@ -60,10 +62,6 @@ impl SemAnalyzer {
     /// Converts the identifier to its mangled name.
     fn mangle(&self, ident: &mut String) {
         *ident = self.mangled_name(&ident).to_string();
-    }
-
-    fn fold_exp(exp: &mut Exp, value: i32) {
-        *exp = Exp::Number(Number(value));
     }
 
     /// Returns the value of the given identifier,

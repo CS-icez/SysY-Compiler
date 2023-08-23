@@ -70,21 +70,24 @@ impl KoopaTextBuilder {
     /// Makes a new token with the given prefix.
     /// Tokens are guaranteed to be unique among calls.
     fn make_token(&mut self, name: &'static str) -> String {
-        let gen = self
-            .token_gen
+        self.token_gen
             .entry(name)
-            .or_insert_with(|| TokenGenerator::new(name));
-        gen.generate()
+            .or_insert_with(|| TokenGenerator::new(name))
+            .generate()
     }
 
     /// Peeks the next token with the given prefix, i.e.,
     /// what will be returned if `make_token` is called with the same argument.
     fn peek_token(&mut self, name: &'static str) -> String {
-        let gen = self
-            .token_gen
+        self.token_gen
             .entry(name)
-            .or_insert_with(|| TokenGenerator::new(name));
-        gen.peek()
+            .or_insert_with(|| TokenGenerator::new(name))
+            .peek()
+    }
+
+    /// Returns the previously generated token with the given prefix.
+    fn prev_token(&mut self, name: &'static str) -> String {
+        self.token_gen.get(name).unwrap().prev()
     }
 
     /// Equivalent to `make_token("%")`, serving as a shortcut.

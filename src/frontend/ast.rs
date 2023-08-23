@@ -26,7 +26,13 @@ pub enum BType {
 
 pub enum VarDef {
     Scalar(String, Option<Exp>),
-    Array(String, Vec<Exp>, Option<Vec<Exp>>),
+    Array(String, Vec<Exp>, Option<InitList>),
+}
+
+pub enum InitList {
+    Exp(Exp),
+    List(Vec<InitList>),
+    Flat(Vec<Exp>), // This arm not used in parsing.
 }
 
 // Function definition.
@@ -60,75 +66,109 @@ pub enum Stmt {
 
 // Expression.
 
+#[derive(Clone)]
 pub enum Exp {
     LOrExp(LOrExp),
     Number(Number), // This arm not used in parsing.
 }
 
-pub enum LVal {
-    Ident(String),
-    ArrayElem(String, Exp),
+impl Exp {
+    pub fn from_number(value: i32) -> Self {
+        Exp::Number(Number(value))
+    }
+
+    pub fn set_value(&mut self, value: i32) {
+        *self = Exp::Number(Number(value));
+    }
+
+    pub fn value(&self) -> i32 {
+        if let Exp::Number(Number(value)) = self {
+            *value
+        } else {
+            panic!("Unexpected arm");
+        }
+    }
 }
 
+#[derive(Clone)]
+pub enum LVal {
+    Ident(String),
+    ArrayElem(String, Vec<Exp>),
+}
+
+#[derive(Clone)]
 pub enum PrimaryExp {
     BracketedExp(Box<Exp>),
     Number(Number),
     LVal(LVal),
 }
 
+#[derive(Clone)]
 pub struct Number(pub i32);
 
+#[derive(Clone)]
 pub enum UnaryExp {
     Primary(Box<PrimaryExp>),
     FuncCall(String, Vec<Exp>),
     OpUnary(UnaryOp, Box<UnaryExp>),
 }
 
+#[derive(Clone)]
 pub enum UnaryOp {
     Plus, Minus, Not,
 }
 
+#[derive(Clone)]
 pub enum MulExp {
     Unary(Box<UnaryExp>),
     MulOpUnary(Box<MulExp>, MulOp, Box<UnaryExp>),
 }
 
+#[derive(Clone)]
 pub enum MulOp {
     Mul, Div, Rem,
 }
 
+#[derive(Clone)]
 pub enum AddExp {
     Mul(Box<MulExp>),
     AddOpMul(Box<AddExp>, AddOp, Box<MulExp>),
 }
 
+#[derive(Clone)]
 pub enum AddOp {
     Add, Sub,
 }
 
+#[derive(Clone)]
 pub enum RelExp {
     Add(Box<AddExp>),
     RelOpAdd(Box<RelExp>, RelOp, Box<AddExp>),
 }
 
+#[derive(Clone)]
 pub enum RelOp {
     Le, Lt, Ge, Gt,
 }
 
+#[derive(Clone)]
 pub enum EqExp {
     Rel(Box<RelExp>),
     EqOpRel(Box<EqExp>, EqOp, Box<RelExp>),
 }
 
+#[derive(Clone)]
 pub enum EqOp {
     Eq, Ne,
 }
 
+#[derive(Clone)]
 pub enum LAndExp {
     Eq(Box<EqExp>),
     LAndEq(Box<LAndExp>, Box<EqExp>),
 }
 
+#[derive(Clone)]
 pub enum LOrExp {
     LAnd(Box<LAndExp>),
     LOrLAnd(Box<LOrExp>, Box<LAndExp>),

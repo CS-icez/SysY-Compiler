@@ -11,16 +11,19 @@ use std::env;
 use std::fs;
 use std::io::Write;
 
-fn main() -> std::io::Result<()> {
-    // Assume we got correct command line arguments.
-    let mut args = env::args();
-    let _cmd = args.next().unwrap();
-    let mode = args.next().unwrap();
-    let input = args.next().unwrap();
-    assert_eq!(args.next().unwrap(), "-o");
-    let output = args.next().unwrap();
+fn main() {
+    let [_, ref mode, ref input, _, ref output] = env::args().collect::<Vec<_>>()[..] else {
+        panic!("Incorrect command line arguments");
+    };
 
-    let input = fs::read_to_string(input)?;
+    // let mut args = env::args();
+    // let _cmd = args.next().unwrap();
+    // let mode = args.next().unwrap();
+    // let input = args.next().unwrap();
+    // assert_eq!(args.next().unwrap(), "-o");
+    // let output = args.next().unwrap();
+
+    let input = fs::read_to_string(input).unwrap();
     let mut output = fs::File::create(output).unwrap();
 
     let res = match &mode[..] {
@@ -32,6 +35,5 @@ fn main() -> std::io::Result<()> {
         _ => panic!("Unknown mode: {mode}"),
     };
 
-    output.write_all(res.as_bytes())?;
-    Ok(())
+    output.write_all(res.as_bytes()).unwrap();
 }

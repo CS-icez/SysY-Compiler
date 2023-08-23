@@ -56,7 +56,7 @@ impl<'a> RiscvBuilder<'a> {
         use ValueKind::*;
 
         // println!("build_inst: {value:?}");
-        // println!("{value_data:#?}");
+        // println!("{:#?}", self.value_data(value));
         let res = match self.value_kind(value) {
             Integer(_) => self.build_integer(value, dst),
             Alloc(_) => None, // Alloc has been translated to stack offset.

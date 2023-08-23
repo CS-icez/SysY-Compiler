@@ -33,4 +33,10 @@ impl TokenGenerator {
         let cur = self.counter;
         self.prefix.to_string() + &cur.to_string()
     }
+
+    /// Returns the previously generated token.
+    pub fn prev(&self) -> String {
+        let cur = self.counter - 1;
+        self.prefix.to_string() + &cur.to_string()
+    }
 }

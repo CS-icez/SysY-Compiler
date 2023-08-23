@@ -3,6 +3,7 @@
 //! and performing AST transformations.
 
 use super::eval::Eval;
+use super::fold::Fold;
 use super::update::Update;
 use super::SemAnalyzer;
 use crate::frontend::ast::*;
@@ -38,39 +39,35 @@ impl Analyze<VarDecl> for SemAnalyzer {
 
         decl.var_defs.iter_mut().for_each(|def| {
             match def {
-                Scalar(ident, opt_init) => {
+                Scalar(ident, opt_exp) => {
                     if is_const {
-                        let value = self.eval(opt_init.as_ref().unwrap());
+                        let value = self.eval(opt_exp.as_ref().unwrap());
                         self.insert_const_int(ident.clone(), value);
                         return;
                     }
                     self.insert_int(ident.clone());
                     self.mangle(ident);
-                    if let Some(init) = opt_init {
+                    if let Some(exp) = opt_exp {
                         if is_global {
-                            let value = self.eval(init);
-                            Self::fold_exp(init, value);
+                            self.fold(exp);
                         } else {
-                            self.update(init);
+                            self.update(exp);
                         }
                     }
                 }
-                Array(ident, sizes, opt_inits) => {
+                Array(ident, sizes, opt_init) => {
                     self.insert_int_array(ident.clone());
                     self.mangle(ident);
                     sizes.iter_mut().for_each(|size| {
-                        let value = self.eval(size);
-                        Self::fold_exp(size, value);
+                        self.fold(size);
                     });
-                    if let Some(inits) = opt_inits {
-                        inits.iter_mut().for_each(|init| {
-                            if is_global || is_const {
-                                let value = self.eval(init);
-                                Self::fold_exp(init, value);
-                            } else {
-                                self.update(init);
-                            }
-                        });
+                    if let Some(init) = opt_init {
+                        if is_global || is_const {
+                            self.fold(init);
+                        } else {
+                            self.update(init);
+                        }
+                        Self::flatten(def);
                     }
                 }
             }

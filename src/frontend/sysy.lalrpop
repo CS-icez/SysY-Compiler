@@ -14,8 +14,9 @@ match {
 }
 
 // http://lalrpop.github.io/lalrpop/tutorial/006_macros.html
+// Patterns like `T, T, T`, can be empty.
 Comma<T>: Vec<T> = {
-    <mut v:(<T> ",")*> <e:T?> => match e {
+    <mut v: (<T> ",")*> <e: T?> => match e {
         None => v,
         Some(e) => {
             v.push(e);
@@ -23,6 +24,9 @@ Comma<T>: Vec<T> = {
         }
     }
 };
+
+// Patterns like `[T][T][T]`, cannot be empty.
+Square<T>: Vec<T> = ("[" <T> "]")+;
 
 /// Program ::= CompUnit {CompUnit}
 pub Program: Program = {
@@ -72,14 +76,20 @@ BType: BType = {
 }
 
 /// VarDef ::= IDENT ["=" Exp]
-///     | IDENT "[" Exp "]" = "{" [Exp {"," Exp}] "}"
+///     | IDENT {"[" ConstExp "]"} "=" InitVal
 VarDef: VarDef = {
     <Ident> => VarDef::Scalar(<>, None),
     <ident: Ident> "=" <exp: Exp> => VarDef::Scalar(ident, Some(exp)),
-    <ident: Ident> "[" <exp: Exp> "]" => VarDef::Array(ident, vec![exp], None),
-    <ident: Ident> "[" <exp: Exp> "]" "=" "{" <exps: Comma<Exp>> "}" => VarDef::Array(
-        ident, vec![exp], Some(exps),
+    <ident: Ident> <exps: Square<Exp>> => VarDef::Array(ident, exps, None),
+    <ident: Ident> <exps: Square<Exp>> "=" <init: InitList> => VarDef::Array(
+        ident, exps, Some(init),
     ),
+};
+
+/// InitVal ::= Exp | "{" [InitList {"," InitList}] "}"
+InitList: InitList = {
+    <Exp> => InitList::Exp(<>),
+    "{" <Comma<InitList>> "}" => InitList::List(<>),
 };
 
 // Function definition.
@@ -155,10 +165,10 @@ Exp: Exp = {
      <LOrExp> => Exp::LOrExp(<>),
 };
 
-/// LVal ::= IDENT ["[" Exp "]"]
+/// LVal ::= IDENT {"[" Exp "]"}
 LVal: LVal = {
     <Ident> => LVal::Ident(<>),
-    <Ident> "[" <Exp> "]" => LVal::ArrayElem(<>),
+    <Ident> <Square<Exp>> => LVal::ArrayElem(<>),
 };
 
 /// PrimaryExp ::= "(" Exp ")" | Number | LVal

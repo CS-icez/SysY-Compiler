@@ -1,16 +1,27 @@
 //! Update AST nodes with semantic information.
 //! For now, all it does is replacing identifiers
-//! with their mangled names or constant value.
+//! with their mangled names or constant values.
 
 use super::SemAnalyzer;
 use crate::frontend::ast::{self, *};
 
 pub trait Update<T> {
-    fn update(&mut self, target: &mut T);
+    fn update(&self, target: &mut T);
+}
+
+impl Update<InitList> for SemAnalyzer {
+    fn update(&self, list: &mut InitList) {
+        use InitList::*;
+        match list {
+            Exp(exp) => self.update(exp),
+            List(list) => list.iter_mut().for_each(|list| self.update(list)),
+            Flat(_) => panic!("Unexpected arm"),
+        }
+    }
 }
 
 impl Update<Exp> for SemAnalyzer {
-    fn update(&mut self, exp: &mut Exp) {
+    fn update(&self, exp: &mut Exp) {
         if let Exp::LOrExp(exp) = exp {
             self.update(exp);
         } else {
@@ -20,24 +31,24 @@ impl Update<Exp> for SemAnalyzer {
 }
 
 impl Update<LVal> for SemAnalyzer {
-    fn update(&mut self, lval: &mut LVal) {
+    fn update(&self, lval: &mut LVal) {
         use LVal::*;
         match lval {
             Ident(ident) => {
                 self.mangle(ident);
             }
-            ArrayElem(ident, index) => {
+            ArrayElem(ident, indices) => {
                 self.mangle(ident);
-                self.update(index);
+                indices.iter_mut().for_each(|exp| self.update(exp));
             }
         }
     }
 }
 
 impl Update<PrimaryExp> for SemAnalyzer {
-    fn update(&mut self, exp: &mut PrimaryExp) {
+    fn update(&self, exp: &mut PrimaryExp) {
         use PrimaryExp::*;
-        use crate::frontend::ast::LVal::*;
+        use ast::LVal::*;
         match exp {
             BracketedExp(bexp) => self.update(bexp.as_mut()),
             Number(_) => {}
@@ -59,7 +70,7 @@ impl Update<PrimaryExp> for SemAnalyzer {
 }
 
 impl Update<UnaryExp> for SemAnalyzer {
-    fn update(&mut self, exp: &mut UnaryExp) {
+    fn update(&self, exp: &mut UnaryExp) {
         use UnaryExp::*;
         match exp {
             Primary(bexp) => self.update(bexp.as_mut()),
@@ -74,7 +85,7 @@ impl Update<UnaryExp> for SemAnalyzer {
 macro_rules! impl_update_binary_op {
     ($T:ty, $arm1:tt, $arm2:tt, var) => {
         impl Update<$T> for SemAnalyzer {
-            fn update(&mut self, exp: &mut $T) {
+            fn update(&self, exp: &mut $T) {
                 use $T::*;
                 match exp {
                     $arm1(bexp) => self.update(bexp.as_mut()),
@@ -88,7 +99,7 @@ macro_rules! impl_update_binary_op {
     };
     ($T:ty, $arm1:tt, $arm2:tt, fixed) => {
         impl Update<$T> for SemAnalyzer {
-            fn update(&mut self, exp: &mut $T) {
+            fn update(&self, exp: &mut $T) {
                 use $T::*;
                 match exp {
                     $arm1(bexp) => self.update(bexp.as_mut()),

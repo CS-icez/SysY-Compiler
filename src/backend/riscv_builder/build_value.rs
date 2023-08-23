@@ -4,8 +4,11 @@ use std::collections::LinkedList;
 
 use super::RiscvBuilder;
 use crate::backend::riscv::{Inst, MemFill, Reg};
-use koopa::ir::entities::*;
+use koopa::ir::{entities::*, TypeKind};
 use koopa::ir::values::Aggregate;
+
+#[allow(non_upper_case_globals)]
+const t0: Reg = "t0";
 
 macro_rules! push_inst {
     ($self:tt, Inst::$T:ident, Binary, $rd:expr, $rhs:expr, $lhs:expr) => {
@@ -50,26 +53,24 @@ impl RiscvBuilder<'_> {
         Some(rd)
     }
 
-    pub fn build_aggregate(&mut self, arr: Value, agg: &Aggregate) -> LinkedList<MemFill> {
+    pub fn build_aggregate(&mut self, agg: &Aggregate) -> LinkedList<MemFill> {
         use MemFill::*;
+        use ValueKind::*;
         let mut res = LinkedList::new();
 
         agg.elems().iter().for_each(|&value| {
             let data = self.koopa_prog().borrow_value(value);
             let kind = data.kind();
-            let value = if let ValueKind::Integer(int) = kind {
-                int.value()
-            } else {
-                panic!("Invalid init value");
-            };
-            res.push_back(Word(value));
-        });
 
-        let arr_size = self.koopa_prog().borrow_value(arr).ty().size();
-        let agg_size = agg.elems().len() * 4;
-        if agg_size < arr_size {
-            res.push_back(Zero(arr_size - agg_size));
-        }
+            match kind {
+                Integer(int) => res.push_back(Word(int.value())),
+                Aggregate(agg) => {
+                    let mut list = self.build_aggregate(agg);
+                    res.append(&mut list);
+                }
+                _ => panic!("Invalid init value"),
+            }
+        });
 
         res
     }
@@ -126,8 +127,8 @@ impl RiscvBuilder<'_> {
             match kind {
                 Integer(int) => res.push_back(Word(int.value())),
                 ZeroInit(..) => res.push_back(Zero(value_data.ty().size())),
-                Aggregate(elems) => {
-                    let mut list = self.build_aggregate(value, elems);
+                Aggregate(agg) => {
+                    let mut list = self.build_aggregate(agg);
                     res.append(&mut list);
                 }
                 _ => panic!("Invalid init value"),
@@ -167,24 +168,59 @@ impl RiscvBuilder<'_> {
     pub fn build_get_elem_ptr(&mut self, value: Value, dst: Option<Reg>) -> Option<Reg> {
         let gep = to_arm!(self, value, GetElemPtr);
         let src = gep.src();
+        let src_ty_kind = {
+            if src.is_global() {
+                let data = self.koopa_prog().borrow_value(src);
+                data.ty().kind().clone()
+            } else {
+                self.value_data(src).ty().kind().clone()
+            }
+        };
+        let base_size = if let TypeKind::Pointer(base) = src_ty_kind {
+            if let TypeKind::Array(base, _) = base.kind() {
+                base.size()
+            } else {
+                panic!("Unexpected type");
+            }
+        } else {
+            panic!("Unexpected type");
+        };
         let index = gep.index();
-        let rd = self.alloc_reg(value, dst);
-
+        let rd;
+        
         if self.is_global_var(src) {
+            let idx = self.move_inst(index, None);
+            let off = self.alloc_reg(value, None);
+            self.build_muli(off, idx, base_size as i32);
+            self.free_reg(index, idx);
+            self.free_reg(value, off);
             self.push_inst(Inst::La {
-                rd,
+                rd: t0,
                 label: self.global_var_name(src).to_string(),
             });
-        } else {
+            rd = self.alloc_reg(value, dst);
+            push_inst!(self, Inst::Add, Binary, rd, t0, off);
+        } else if self.is_local_var(src) {
+            let idx = self.move_inst(index, None);
+            let off = self.alloc_reg(value, None);
+            self.build_muli(off, idx, base_size as i32);
+            self.free_reg(index, idx);
+            self.free_reg(value, off);
             let imm = self.offset(src) as i32;
-            self.build_addi(rd, "sp", imm);
+            self.build_addi(t0, "sp", imm);
+            rd = self.alloc_reg(value, dst);
+            push_inst!(self, Inst::Add, Binary, rd, t0, off);
+        } else {
+            let rs = self.move_inst(src, None);
+            let idx = self.move_inst(index, None);
+            let off = self.alloc_reg(value, None);
+            self.build_muli(off, idx, base_size as i32);
+            self.free_reg(index, idx);
+            self.free_reg(value, off);
+            rd = self.alloc_reg(value, dst);
+            push_inst!(self, Inst::Add, Binary, rd, off, rs);
+            self.free_reg(src, rs);
         }
-
-        let idx = self.move_inst(index, None);
-        self.build_muli(idx, idx, 4);
-        push_inst!(self, Inst::Add, Binary, rd, idx, rd);
-
-        self.free_reg(index, idx);
 
         Some(rd)
     }

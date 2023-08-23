@@ -1,6 +1,7 @@
 //! Function metadata.
 
 use koopa::ir::{ValueKind::*, *};
+use core::panic;
 use std::collections::HashMap;
 
 pub struct FuncMeta {
@@ -59,14 +60,22 @@ impl From<&FunctionData> for FuncMeta {
         let mut res = Self::new();
         let values = Self::func_values(func);
 
-        let kind = |handle| func.dfg().value(handle).kind();
-        let size = |handle| func.dfg().value(handle).ty().size();
+        let data = |handle| func.dfg().value(handle);
+        let kind = |handle| data(handle).kind();
+        let base_size = |handle| {
+            let ty_kind = data(handle).ty().kind();
+            if let TypeKind::Pointer(base) = ty_kind {
+                base.size()
+            } else {
+                panic!("Unexpected type kind");
+            }
+        };
 
         // Reserve frame for variables.
         values.iter().for_each(|&handle| {
             if let Alloc(_) = kind(handle) {
                 res.offset.insert(handle, res.frame_size);
-                res.frame_size += size(handle);
+                res.frame_size += base_size(handle);
             }
         });
 
