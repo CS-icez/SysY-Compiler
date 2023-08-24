@@ -8,6 +8,7 @@ use build_from::BuildFrom;
 use std::collections::{HashMap, VecDeque};
 use token_generator::TokenGenerator;
 
+/// Loop metadata.
 struct LoopMeta {
     cond_label: String,
     #[allow(dead_code)]
@@ -15,6 +16,7 @@ struct LoopMeta {
     end_label: String,
 }
 
+/// Koopa text builder.
 pub struct KoopaTextBuilder {
     text: String,
     loop_meta: VecDeque<LoopMeta>, // Actually a stack.
@@ -89,12 +91,8 @@ impl KoopaTextBuilder {
             .peek()
     }
 
-    /// Returns the previously generated token with the given prefix.
-    fn prev_token(&mut self, name: &'static str) -> String {
-        self.token_gen.get(name).unwrap().prev()
-    }
-
     /// Equivalent to `make_token("%")`, serving as a shortcut.
+    /// This is used to represent ordinary temporary values.
     fn make_num(&mut self) -> String {
         self.make_token("%")
     }
@@ -112,8 +110,14 @@ impl KoopaTextBuilder {
         self.make_token("%koopa_")
     }
 
-    /// Resets the state of token generator.
-    fn reset_tokens(&mut self) {
+    /// Equivalent to `make_token("%ptr")`, serving as a shortcut.
+    /// This is used to highlight usage of pointers.
+    fn make_ptr(&mut self) -> String {
+        self.make_token("%ptr_")
+    }
+
+    /// Resets the state of token generator on local tokens.
+    fn reset_local_tokens(&mut self) {
         let f = |gen: &mut TokenGenerator| {gen.reset(); Some(0) };
         self.token_gen.get_mut("%").and_then(f);
         self.token_gen.get_mut("%tmp_").and_then(f);

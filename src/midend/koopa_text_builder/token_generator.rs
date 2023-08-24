@@ -30,13 +30,7 @@ impl TokenGenerator {
     /// Peeks the next token to be generated, i.e.,
     /// what will be returned if `generate` is called.
     pub fn peek(&self) -> String {
-        let cur = self.counter;
-        self.prefix.to_string() + &cur.to_string()
-    }
-
-    /// Returns the previously generated token.
-    pub fn prev(&self) -> String {
-        let cur = self.counter - 1;
-        self.prefix.to_string() + &cur.to_string()
+        let next = self.counter;
+        self.prefix.to_string() + &next.to_string()
     }
 }

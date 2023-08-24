@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-#[derive(Clone)]
+// Symbol table entry.
 pub enum Symbol {
     // Token is used as mangled name.
     Int { token: String },
@@ -15,6 +15,7 @@ pub enum Symbol {
     IntArray { token: String },
 }
 
+// Symbol table.
 pub struct SymTab {
     table: HashMap<String, Symbol>,
 }

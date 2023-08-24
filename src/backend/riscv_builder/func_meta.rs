@@ -73,7 +73,7 @@ impl From<&FunctionData> for FuncMeta {
 
         // Reserve frame for variables.
         values.iter().for_each(|&handle| {
-            if let Alloc(_) = kind(handle) {
+            if let Alloc(..) = kind(handle) {
                 res.offset.insert(handle, res.frame_size);
                 res.frame_size += base_size(handle);
             }
@@ -87,7 +87,7 @@ impl From<&FunctionData> for FuncMeta {
                 return;
             }
             let &user = used_by.iter().next().unwrap();
-            if let Call(_) = kind(user) {
+            if let Call(..) = kind(user) {
                 res.offset.insert(handle, res.frame_size);
                 res.frame_size += 4;
             }

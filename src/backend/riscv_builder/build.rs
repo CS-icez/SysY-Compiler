@@ -55,20 +55,18 @@ impl<'a> RiscvBuilder<'a> {
     pub fn build_inst(&mut self, value: Value, dst: Option<Reg>) -> Option<Reg> {
         use ValueKind::*;
 
-        // println!("build_inst: {value:?}");
-        // println!("{:#?}", self.value_data(value));
         let res = match self.value_kind(value) {
-            Integer(_) => self.build_integer(value, dst),
-            Alloc(_) => None, // Alloc has been translated to stack offset.
-            Load(_) => self.build_load(value, dst),
-            Store(_) => self.build_store(value),
-            GetPtr(_) => self.build_get_ptr(value, dst),
-            GetElemPtr(_) => self.build_get_elem_ptr(value, dst),
-            Binary(_) => self.build_binary(value, dst),
-            Branch(_) => self.build_branch(value),
-            Jump(_) => self.build_jump(value),
-            Call(_) => self.build_call(value, dst),
-            Return(_) => self.build_return(value),
+            Integer(..) => self.build_integer(value, dst),
+            Alloc(..) => None, // Alloc has been translated to stack offset.
+            Load(..) => self.build_load(value, dst),
+            Store(..) => self.build_store(value),
+            GetPtr(..) => self.build_get_ptr(value, dst),
+            GetElemPtr(..) => self.build_get_elem_ptr(value, dst),
+            Binary(..) => self.build_binary(value, dst),
+            Branch(..) => self.build_branch(value),
+            Jump(..) => self.build_jump(value),
+            Call(..) => self.build_call(value, dst),
+            Return(..) => self.build_return(value),
             _ => panic!("Unexpected value kind"),
         };
 

@@ -96,7 +96,6 @@ impl<'a:'r, 'r> RiscvBuilder<'a> {
 
     /// Frees the given register from the given value.
     fn free_reg(&mut self, inst: Value, reg: Reg) {
-        // println!("free_reg: {inst:?}");
         self.reg_mgr.free(inst, reg);
     }
 
@@ -182,11 +181,6 @@ impl<'a:'r, 'r> RiscvBuilder<'a> {
         self.used_by(value).is_empty().not()
     }
 
-    /// Returns whether the given value is a global variable.
-    fn is_global_var(&self, value: Value) -> bool {
-        self.koopa_prog().inst_layout().contains(&value)
-    }
-
     /// Returns whether the given value is a local variable
     /// of the current function.
     fn is_local_var(&self, value: Value) -> bool {
@@ -201,7 +195,7 @@ impl<'a:'r, 'r> RiscvBuilder<'a> {
             return false;
         }
         let &user = used_by.iter().next().unwrap();
-        matches!(self.value_kind(user), ValueKind::Call(_))
+        matches!(self.value_kind(user), ValueKind::Call(..))
     }
 
     // Wrappers of RISCV data types.

@@ -3,12 +3,14 @@
 //! and performing AST transformations.
 
 use super::eval::Eval;
+use super::flatten::flatten;
 use super::fold::Fold;
 use super::update::Update;
 use super::SemAnalyzer;
 use crate::frontend::ast::*;
 
 pub trait Analyze<T> {
+    /// Analyzes the given AST node, maybe changes it.
     fn analyze(&mut self, target: &mut T);
 }
 
@@ -67,7 +69,11 @@ impl Analyze<VarDecl> for SemAnalyzer {
                         } else {
                             self.update(init);
                         }
-                        Self::flatten(def);
+
+                        let InitList::List(list) = init else {
+                            panic!("Unexpected arm");
+                        };
+                        *init = flatten(list, sizes);
                     }
                 }
             }
@@ -77,9 +83,9 @@ impl Analyze<VarDecl> for SemAnalyzer {
 
 impl Analyze<FuncDef> for SemAnalyzer {
     fn analyze(&mut self, func_def: &mut FuncDef) {
-        self.enter_scope();
+        self.enter_scope(); // Function scope.
         func_def.2.iter_mut().for_each(|param| self.analyze(param));
-        self.analyze(&mut func_def.3);
+        self.analyze(&mut func_def.3); // Body.
         self.exit_scope();
     }
 }
@@ -92,10 +98,10 @@ impl Analyze<FuncFParam> for SemAnalyzer {
                 self.insert_int(ident.clone());
                 self.mangle(ident);
             }
-            Array(_, ident, exps) => {
+            Array(_, ident, sizes) => {
                 self.insert_int_array(ident.clone());
                 self.mangle(ident);
-                exps.iter_mut().for_each(|exp| self.fold(exp));
+                sizes.iter_mut().for_each(|exp| self.fold(exp));
             }
         }
     }
@@ -103,7 +109,7 @@ impl Analyze<FuncFParam> for SemAnalyzer {
 
 impl Analyze<Block> for SemAnalyzer {
     fn analyze(&mut self, block: &mut Block) {
-        self.enter_scope();
+        self.enter_scope(); // Block scope.
         block.0.iter_mut().for_each(|item| self.analyze(item));
         self.exit_scope();
     }

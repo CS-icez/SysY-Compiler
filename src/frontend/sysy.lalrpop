@@ -58,14 +58,14 @@ IntConst: i32 = {
 VarDecl: VarDecl = {
      "const" <btype: BType> <var_defs: Comma<VarDef>> ";" => {
         VarDecl {
-            is_global: false,
+            is_global: false, // Will be set to true in `CompUnit::VarDecl`.
             is_const: true,
             btype, var_defs,
         }
      },
      <btype: BType> <var_defs: Comma<VarDef>> ";" => {
         VarDecl {
-            is_global: false,
+            is_global: false, // Will be set to true in `CompUnit::VarDecl`.
             is_const: false,
             btype, var_defs,
         }

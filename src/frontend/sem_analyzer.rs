@@ -10,18 +10,17 @@ mod update;
 use super::ast::*;
 use analyze_sem::Analyze;
 use std::collections::{HashMap, VecDeque};
-use symtab::{
-    SymTab,
-    Symbol::{self, *},
-};
+use symtab::SymTab;
+use symtab::Symbol::{self, *};
 
+/// Semantics analyzer.
 pub struct SemAnalyzer {
     symtabs: VecDeque<SymTab>, // Actually a stack, Rust std didn't provide it.
     ident_cnt: HashMap<String, u32>,
 }
 
 impl SemAnalyzer {
-    /// Run semantic analysis on the given program.
+    /// Runs semantic analysis on the given program.
     pub fn run_on(prog: &mut Program) {
         Self::new().analyze(prog);
     }
@@ -50,18 +49,14 @@ impl SemAnalyzer {
         self.symtabs.iter().find_map(|table| table.get(ident)).unwrap()
     }
 
-    /// Returns the mangled name of the given identifier.
-    fn mangled_name(&self, ident: &str) -> &str {
-        match self.symbol(ident) {
+    /// Converts the identifier to its mangled name.
+    fn mangle(&self, ident: &mut String) {
+        let mangled = match self.symbol(ident) {
             Int { token } => token,
             ConstInt { token, .. } => token,
             IntArray { token } => token,
-        }
-    }
-
-    /// Converts the identifier to its mangled name.
-    fn mangle(&self, ident: &mut String) {
-        *ident = self.mangled_name(&ident).to_string();
+        };
+        *ident = mangled.to_string();
     }
 
     /// Returns the value of the given identifier,

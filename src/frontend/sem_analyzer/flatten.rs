@@ -1,69 +1,53 @@
 //! Flatten initializer lists and fill in omitted values with zeros.
-//! This may be space-consuming if you create a large array with only zeros.
+//! This can be space-consuming if you create a large array with only zeros.
 
-use super::SemAnalyzer;
-use crate::frontend::ast::{self, Exp, InitList, VarDef};
-use std::iter::repeat;
+// This module, along with every piece of code in midend that uses it,
+// is written very awfully.
+// Maybe I should come up with a new representation of initializer lists
+// which allows for more graceful handling of C style aggregate initializer.
+// Or possibly those C syntax rules are simply a mess.
 
-impl SemAnalyzer {
-    pub fn flatten(def: &mut VarDef) {
-        let VarDef::Array(_, sizes, opt_init) = def else {
-            panic!("Unexpected arm");
-        };
-        let Some(init) = opt_init else {
-            panic!("Unexpected arm");
-        };
+use crate::frontend::ast::{self, Exp, InitList};
 
-        let dims = sizes
-            .iter()
-            .rev()
-            .scan(1, |acc, size| {
-                *acc *= size.value() as usize;
-                Some(*acc)
-            })
-            .collect::<Vec<_>>();
+pub fn flatten(list: &[InitList], sizes: &[Exp]) -> InitList {
+    // e.g. [1, 2, 3] => [3, 3 * 2, 3 * 2 * 1]
+    let dims = sizes
+        .iter()
+        .rev()
+        .scan(1, |acc, size| {
+            *acc *= size.value() as usize;
+            Some(*acc)
+        })
+        .collect::<Vec<_>>();
 
-        let mut flat = Vec::with_capacity(dims.last().unwrap().clone());
-        Self::flatten_helper(&mut flat, dims, init);
-        *init = InitList::Flat(flat);
-    }
+    let mut flat = Vec::with_capacity(dims.last().unwrap().clone());
+    flatten_helper(&mut flat, dims, list);
+    InitList::Flat(flat)
+}
 
-    fn flatten_helper(dst: &mut Vec<Exp>, dims: Vec<usize>, init: &InitList) {
-        use InitList::*;
-        let begin_size = dst.len();
-        match init {
-            Exp(exp) => {
-                // TODO: avoid cloning.
-                dst.push(exp.clone());
-                return;
-            }
-            List(list) => {
-                list.iter().for_each(|init| match init {
-                    Exp(exp) => {
-                        dst.push(exp.clone());
-                    }
-                    List(_) => {
-                        let cur_len = dst.len();
-                        let sub_dims = dims
-                            .iter()
-                            .take(dims.len() - 1)
-                            .map_while(|dim| if cur_len % dim == 0 { Some(*dim) } else { None })
-                            .collect::<Vec<_>>();
-                        Self::flatten_helper(dst, sub_dims, init);
-
-                    }
-                    Flat(_) => {
-                        panic!("Unexpected arm");
-                    }
-                });
-                let rest = dims.last().unwrap() + begin_size - dst.len();
-                repeat(0).take(rest).for_each(|_| {
-                    dst.push(ast::Exp::from_number(0));
-                });
-            }
-            Flat(_) => {
-                panic!("Unexpected arm");
-            }
+fn flatten_helper(dst: &mut Vec<Exp>, dims: Vec<usize>, list: &[InitList]) {
+    use InitList::*;
+    let begin_size = dst.len();
+    list.iter().for_each(|init| match init {
+        Exp(exp) => {
+            dst.push(exp.clone()); // NOTE: Overhead.
         }
-    }
+        List(sub_list) => {
+            let len = dst.len();
+            let sub_dims = dims
+                .iter()
+                .take(dims.len() - 1)
+                .map_while(|dim| if len % dim == 0 { Some(*dim) } else { None })
+                .collect::<Vec<_>>();
+            flatten_helper(dst, sub_dims, sub_list);
+        }
+        Flat(..) => {
+            panic!("Unexpected arm");
+        }
+    });
+
+    let rest = dims.last().unwrap() + begin_size - dst.len();
+    (0..rest).for_each(|_| {
+        dst.push(ast::Exp::from_number(0));
+    });
 }

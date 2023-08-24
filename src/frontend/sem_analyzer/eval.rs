@@ -1,28 +1,37 @@
-//! Evaluation of constant expressions.
+//! Evaluate constant expressions.
+
+use core::panic;
 
 use super::SemAnalyzer;
 use crate::frontend::ast::*;
 
+macro_rules! panic_arm {
+    () => {
+        panic!("Unexpected arm")
+    };
+}
+
 pub trait Eval<T> {
+    /// Evaluates the given expression.
     fn eval(&self, target: &T) -> i32;
 }
 
 impl Eval<Exp> for SemAnalyzer {
     fn eval(&self, exp: &Exp) -> i32 {
-        if let Exp::LOrExp(exp) = exp {
-            self.eval(exp)
-        } else {
-            panic!("Unexpected arm");
+        use Exp::*;
+        match exp {
+            LOrExp(lor) => self.eval(lor),
+            Number(..) => panic_arm!(),
         }
     }
 }
 
 impl Eval<LVal> for SemAnalyzer {
     fn eval(&self, lval: &LVal) -> i32 {
-        if let LVal::Ident(ident) = lval {
-            self.value(ident)
-        } else {
-            panic!("Unexpected arm");
+        use LVal::*;
+        match lval {
+            Ident(ident) => self.value(ident),
+            ArrayElem(..) => panic_arm!(),
         }
     }
 }
@@ -50,7 +59,7 @@ impl Eval<UnaryExp> for SemAnalyzer {
         use UnaryOp::*;
         match exp {
             Primary(bexp) => self.eval(bexp.as_ref()),
-            FuncCall(_, _) => panic!("Function call in constant expression"),
+            FuncCall(..) => panic_arm!(),
             OpUnary(op, bexp) => {
                 let value = self.eval(bexp.as_ref());
                 match op {

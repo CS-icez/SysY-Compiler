@@ -59,7 +59,7 @@ impl RegManager {
     /// in `reg2val`.
     fn find_free_reg(&self) -> usize {
         let f = |i| match self.reg2val[i] {
-            Some(_) => None,
+            Some(..) => None,
             None => Some(i),
         };
 
@@ -77,7 +77,6 @@ impl RegManager {
     /// Allocates the given register for the given value and returns it.
     /// When argument `reg` is `None`, it means any register is ok.
     pub fn alloc(&mut self, val: Value, reg: Option<Reg>) -> Reg {
-        // println!("alloc: {val:?} to {reg:?}\n");
         assert!(self.val2reg.get(&val) == None, "Value already allocated");
         if let Some(reg) = reg {
             if reg == "x0" { // x0 is always free.
@@ -148,7 +147,6 @@ impl RegManager {
 
     /// Frees the given register from the given value.
     pub fn free(&mut self, val: Value, reg: Reg) {
-        // println!("free: {val:?} from {reg:?}\n");
         if reg == "x0" { // You may free x0 whenever you like.
             self.val2reg.remove(&val);
             return;

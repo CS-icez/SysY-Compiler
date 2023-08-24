@@ -1,8 +1,6 @@
 //! This module defines and implements the `BuildFrom` trait for `KoopaTextBuilder`.
 //! Koopa text generating is done by traversing the AST.
 
-use std::vec;
-
 use super::KoopaTextBuilder;
 use crate::frontend::ast::*;
 
@@ -24,9 +22,10 @@ macro_rules! push_text {
     };
 }
 
-// The boolean argument and returned string may be used
-// for different purposes, or not used at all.
 pub trait BuildFrom<T> {
+    /// Builds Koopa text from the given AST node.
+    /// The boolean argument and returned string may be used
+    /// for different purposes, or not used at all.
     fn build_from(&mut self, target: &T, _: bool) -> String;
 }
 
@@ -75,56 +74,55 @@ impl BuildFrom<VarDecl> for KoopaTextBuilder {
         let is_global = decl.is_global;
         let is_const = decl.is_const;
 
-        decl.var_defs.iter().for_each(|decl| {
-            match decl {
+        decl.var_defs.iter().for_each(|def| {
+            match def {
                 Scalar(ident, opt_exp) => {
                     if is_const {
                         return;
                     }
+
                     if is_global {
-                        let value = if let Some(init) = opt_exp {
+                        let init = if let Some(init) = opt_exp {
                             self.build_from(init, true)
                         } else {
                             "zeroinit".to_string()
                         };
-                        push_text!(self, "global {ident} = alloc i32, {value}\n");
+                        push_text!(self, "global {ident} = alloc i32, {init}\n");
                         push_text!(self, "\n");
                         return;
                     }
+
                     push_text!(self, "{TAB}{ident} = alloc i32\n");
+
                     if let Some(exp) = opt_exp {
                         let value = self.build_from(exp, true);
                         push_text!(self, "{TAB}store {value}, {ident}\n");
                     }
                 }
+
                 Array(ident, sizes, opt_list) => {
                     self.arrays.insert(ident.to_string(), sizes.len());
-                    let ty = "[".repeat(sizes.len())
-                        + "i32, "
-                        + sizes
-                            .iter()
-                            .rev()
-                            .map(|size| size.value().to_string())
-                            .collect::<Vec<_>>()
-                            .join("], ")
-                            .as_ref()
-                        + "]";
-                    let dims = sizes
+
+                    let ty = self.nest_type(&decl.btype, sizes);
+
+                    let sizes = sizes
                         .iter()
                         .map(|size| size.value() as usize)
                         .collect::<Vec<_>>();
+
                     if is_global {
-                        let agg = if let Some(list) = opt_list {
+                        let init = if let Some(list) = opt_list {
                             let list = if let InitList::Flat(list) = list {
                                 list
                             } else {
                                 panic!("Unexpected arm");
                             };
-                            self.nest_list(list, &dims, 0)
+                            self.nest_list(list, &sizes, 0)
                         } else {
                             "zeroinit".to_string()
                         };
-                        push_text!(self, "global {ident} = alloc {ty}, {agg}\n");
+
+                        push_text!(self, "global {ident} = alloc {ty}, {init}\n");
                         push_text!(self, "\n");
                         return;
                     }
@@ -137,7 +135,7 @@ impl BuildFrom<VarDecl> for KoopaTextBuilder {
                         } else {
                             panic!("Unexpected arm");
                         };
-                        self.init_list(list, &dims, &mut vec![], ident);
+                        self.init_list(list, &sizes, ident);
                     }
                 }
             }
@@ -151,62 +149,79 @@ impl BuildFrom<BType> for KoopaTextBuilder {
     fn build_from(&mut self, btype: &BType, _: bool) -> String {
         use BType::*;
         match btype {
-            Int => ": i32",
+            Int => "i32",
             Void => "",
         }
         .to_string()
     }
 }
 
+// This part is awful. It shouldn't have become that complex.
 impl KoopaTextBuilder {
-    // TODO: Optimize on this.
-    fn nest_list(&mut self, list: &Vec<Exp>, dims: &[usize], begin: usize) -> String {
-        if dims.is_empty() {
+    fn nest_type(&mut self, btype: &BType, sizes: &[Exp]) -> String {
+        let btype = self.build_from(btype, true);
+        if sizes.is_empty() {
+            return btype;
+        }
+
+        "[".repeat(sizes.len())
+            + btype.as_ref()
+            + ", "
+            + sizes
+                .iter()
+                .rev()
+                .map(|size| size.value().to_string())
+                .collect::<Vec<_>>()
+                .join("], ")
+                .as_ref()
+            + "]"
+    }
+
+    fn nest_list(&self, list: &[Exp], sizes: &[usize], begin: usize) -> String {
+        if sizes.is_empty() {
             return list[begin].value().to_string();
         }
-        let size = dims.iter().skip(1).product::<usize>();
+
+        let size = sizes.iter().skip(1).product::<usize>();
         "{".to_string()
-            + &(0..dims[0])
-                .map(|i| self.nest_list(list, &dims[1..], begin + i * size))
+            + (0..sizes[0])
+                .map(|i| self.nest_list(list, &sizes[1..], begin + i * size))
                 .collect::<Vec<_>>()
                 .join(", ")
+                .as_ref()
             + "}"
     }
 
-    // TODO: Optimize on this.
-    fn init_list(&mut self, list: &Vec<Exp>, dims: &[usize], res: &mut Vec<usize>, ident: &str) {
-        if res.len() == dims.len() {
-            res.iter().fold(ident.to_string(), |arr, idx| {
-                let ptr = self.make_token("%ptr_");
-                push_text!(self, "{TAB}{ptr} = getelemptr {arr}, {idx}\n");
-                ptr
+    // Due to my register allocation policy (use-once),
+    // I have to choose an awkward way to initialize arrays.
+    fn init_list(&mut self, list: &[Exp], sizes: &[usize], ident: &str) {
+        //? How to make it lazy? I tried but failed.
+        (0..sizes.len())
+            .fold(vec![vec![]], |tuples, i| {
+                tuples
+                    .into_iter()
+                    .flat_map(|tuple| {
+                        (0..sizes[i]).map(move |j| {
+                            let mut new_tuple = tuple.clone();
+                            new_tuple.push(j);
+                            new_tuple
+                        })
+                    })
+                    .collect()
+            })
+            .into_iter()
+            .for_each(|tuple| {
+                let ptr = tuple.iter().fold(ident.to_string(), |arr, idx| {
+                    let ptr = self.make_ptr();
+                    push_text!(self, "{TAB}{ptr} = getelemptr {arr}, {idx}\n");
+                    ptr
+                });
+                let idx = tuple.iter().enumerate().fold(0, |acc, (i, idx)| {
+                    acc * sizes[i] + idx
+                });
+                let value = self.build_from(&list[idx], true);
+                push_text!(self, "{TAB}store {value}, {ptr}\n");
             });
-            let ptr = self.prev_token("%ptr_");
-            let idx = res.iter().enumerate().fold(0, |acc, (i, idx)| {
-                acc * dims[i] + idx
-            });
-            let value = self.build_from(&list[idx], true);
-            push_text!(self, "{TAB}store {value}, {ptr}\n");
-            return;
-        }
-
-        (0..dims[res.len()]).for_each(|i| {
-            res.push(i);
-            self.init_list(list, dims, res, ident);
-            res.pop();
-        });
-
-        // if dims.is_empty() {
-        //     let value = self.build_from(&list[begin], true);
-        //     push_text!(self, "store {value}, {arr}\n");
-        //     return;
-        // }
-        // let size = dims.iter().skip(1).product::<usize>();
-        // (0..dims[0]).for_each(|i| {
-        //     let ptr = self.make_token("%ptr_");
-        //     push_text!(self, "{ptr} = getelemptr {arr}, {i}\n");
-        //     self.init_list(list, &dims[1..], begin + i * size, &ptr);
-        // });
     }
 }
 
@@ -215,9 +230,13 @@ impl KoopaTextBuilder {
 impl BuildFrom<FuncDef> for KoopaTextBuilder {
     fn build_from(&mut self, func_def: &FuncDef, _: bool) -> String {
         use FuncFParam::*;
-        self.reset_tokens();
+        self.reset_local_tokens();
 
-        let ty = self.build_from(&func_def.0, false);
+        // Print function signature.
+        let mut ty = self.build_from(&func_def.0, false);
+        if ty != "" {
+            ty = ": ".to_string() + &ty;
+        }
         let name = &func_def.1;
         let params = func_def.2
             .iter()
@@ -225,8 +244,6 @@ impl BuildFrom<FuncDef> for KoopaTextBuilder {
             .collect::<Vec<_>>()
             .join(", ");
 
-        // fun @name(...) [-> i32] {
-        // %entry:
         push_text!(self, "fun @{name}({params}){ty} {{\n");
         push_text!(self, "%entry:\n");
 
@@ -234,27 +251,14 @@ impl BuildFrom<FuncDef> for KoopaTextBuilder {
         self.pointers.clear();
         func_def.2.iter().for_each(|param| {
             match param {
-                Scalar(_, ident) => {
-                    push_text!(self, "{TAB}{ident} = alloc i32\n");
+                Scalar(btype, ident) => {
+                    let btype = self.build_from(btype, true);
+                    push_text!(self, "{TAB}{ident} = alloc {btype}\n");
                     push_text!(self, "{TAB}store {ident}_f, {ident}\n");
                 }
-                Array(_, ident, sizes) => {
-                    let ty = if sizes.is_empty() {
-                        "*i32".to_string()
-                    } else {
-                        "*".to_string()
-                            + "[".repeat(sizes.len()).as_ref()
-                            + "i32, "
-                            + sizes
-                                .iter()
-                                .rev()
-                                .map(|size| size.value().to_string())
-                                .collect::<Vec<_>>()
-                                .join("], ")
-                                .as_ref()
-                            + "]"
-                    };
-                    push_text!(self, "{TAB}{ident} = alloc {ty}\n");
+                Array(btype, ident, sizes) => {
+                    let ty = self.nest_type(&btype, sizes);
+                    push_text!(self, "{TAB}{ident} = alloc *{ty}\n");
                     push_text!(self, "{TAB}store {ident}_f, {ident}\n");
                     self.pointers.insert(ident.to_string(), sizes.len() + 1);
                 }
@@ -289,26 +293,13 @@ impl BuildFrom<FuncFParam> for KoopaTextBuilder {
         use FuncFParam::*;
 
         match param {
-            Scalar(_, ident) => {
-                format!("{ident}_f: i32")
+            Scalar(btype, ident) => {
+                let btype = self.build_from(btype, true);
+                format!("{ident}_f: {btype}")
             }
-            Array(_, ident, sizes) => {
-                let ty = if sizes.is_empty() {
-                    "*i32".to_string()
-                } else {
-                    "*".to_string()
-                        + "[".repeat(sizes.len()).as_ref()
-                        + "i32, "
-                        + sizes
-                            .iter()
-                            .rev()
-                            .map(|size| size.value().to_string())
-                            .collect::<Vec<_>>()
-                            .join("], ")
-                            .as_ref()
-                        + "]"
-                };
-                format!("{ident}_f: {ty}")
+            Array(btype, ident, sizes) => {
+                let ty = self.nest_type(btype, sizes);
+                format!("{ident}_f: *{ty}")
             }
         }
     }
@@ -346,20 +337,22 @@ impl BuildFrom<Stmt> for KoopaTextBuilder {
                     Ident(ident) => {
                         push_text!(self, "{TAB}store {src}, {ident}\n");
                     }
+                    // This part is awful.
                     ArrayElem(ident, indices) => {
                         let mut arr = ident.clone();
                         if self.is_pointer(ident) {
-                            arr = self.make_token("%ptr_");
+                            arr = self.make_ptr();
                             push_text!(self, "{TAB}{arr} = load {ident}\n");
                         }
-                        let ptr = indices.iter().enumerate().fold(arr, |arr, (i, index)| {
-                            let idx = self.build_from(index, true);
-                            let ptr = self.make_token("%ptr_");
-                            if i == 0 && self.is_pointer(ident) {
-                                push_text!(self, "{TAB}{ptr} = getptr {arr}, {idx}\n");
+                        let ptr = indices.iter().enumerate().fold(arr, |arr, (i, idx)| {
+                            let idx = self.build_from(idx, true);
+                            let ptr = self.make_ptr();
+                            let op = if i == 0 && self.is_pointer(ident) {
+                                "getptr"
                             } else {
-                                push_text!(self, "{TAB}{ptr} = getelemptr {arr}, {idx}\n");
-                            }
+                                "getelemptr"
+                            };
+                            push_text!(self, "{TAB}{ptr} = {op} {arr}, {idx}\n");
                             ptr
                         });
                         push_text!(self, "{TAB}store {src}, {ptr}\n");
@@ -477,6 +470,7 @@ impl BuildFrom<Exp> for KoopaTextBuilder {
     }
 }
 
+// This part is the most awful one.
 impl BuildFrom<LVal> for KoopaTextBuilder {
     fn build_from(&mut self, lval: &LVal, used: bool) -> String {
         use LVal::*;
@@ -501,29 +495,27 @@ impl BuildFrom<LVal> for KoopaTextBuilder {
 
         let mut arr = ident.clone();
         if is_pointer {
-            arr = self.make_token("%ptr_");
+            arr = self.make_ptr();
             push_text!(self, "{TAB}{arr} = load {ident}\n");
         }
 
         match lval {
-            Ident(_) => {
+            Ident(..) => {
                 let dst = self.make_token("%");
-                if is_pointer {
-                    push_text!(self, "{TAB}{dst} = getptr {arr}, 0\n");
-                } else {
-                    push_text!(self, "{TAB}{dst} = getelemptr {arr}, 0\n");
-                }
+                let op = if is_pointer { "getptr" } else { "getelemptr" };
+                push_text!(self, "{TAB}{dst} = {op} {arr}, 0\n");
                 return dst;
             }
             ArrayElem(_, indices) => {
                 arr = indices.iter().enumerate().fold(arr, |arr, (i, index)| {
                     let idx = self.build_from(index, true);
-                    let ptr = self.make_token("%ptr_");
-                    if i == 0 && is_pointer {
-                        push_text!(self, "{TAB}{ptr} = getptr {arr}, {idx}\n");
+                    let ptr = self.make_ptr();
+                    let op = if i == 0 && is_pointer {
+                        "getptr"
                     } else {
-                        push_text!(self, "{TAB}{ptr} = getelemptr {arr}, {idx}\n");
-                    }
+                        "getelemptr"
+                    };
+                    push_text!(self, "{TAB}{ptr} = {op} {arr}, {idx}\n");
                     ptr
                 });
                 size = indices.len();

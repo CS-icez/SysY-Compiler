@@ -81,7 +81,7 @@ impl Exp {
     }
 
     pub fn set_value(&mut self, value: i32) {
-        *self = Exp::Number(Number(value));
+        *self = Exp::from_number(value);
     }
 
     pub fn value(&self) -> i32 {

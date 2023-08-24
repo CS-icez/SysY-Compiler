@@ -10,6 +10,8 @@ use koopa::ir::values::Aggregate;
 #[allow(non_upper_case_globals)]
 const t0: Reg = "t0";
 
+type OptReg = Option<Reg>;
+
 macro_rules! push_inst {
     ($self:tt, Inst::$T:ident, Binary, $rd:expr, $rhs:expr, $lhs:expr) => {
         $self.push_inst(Inst::$T {
@@ -42,7 +44,7 @@ macro_rules! to_arm {
 }
 
 impl RiscvBuilder<'_> {
-    pub fn build_integer(&mut self, value: Value, dst: Option<Reg>) -> Option<Reg> {
+    pub fn build_integer(&mut self, value: Value, dst: OptReg) -> OptReg {
         let int = to_arm!(self, value, Integer);
         let imm = int.value();
         if dst == None && imm == 0 { // Optimization.
@@ -76,7 +78,7 @@ impl RiscvBuilder<'_> {
     }
 
     // NOTE: Specifying destination register is not supported.
-    pub fn build_func_arg_ref(&mut self, value: Value) -> Option<Reg> {
+    pub fn build_func_arg_ref(&mut self, value: Value) -> OptReg {
         let arg_ref = to_arm!(self, value, FuncArgRef);
         let idx = arg_ref.index() as usize;
         if idx < 8 {
@@ -89,19 +91,19 @@ impl RiscvBuilder<'_> {
         }
     }
 
-    pub fn build_load(&mut self, value: Value, dst: Option<Reg>) -> Option<Reg> {
+    pub fn build_load(&mut self, value: Value, dst: OptReg) -> OptReg {
         let load = to_arm!(self, value, Load);
         let src = load.src();
         let rd = self.alloc_reg(value, dst);
 
-        if self.is_global_var(src) {
-            let label = self.global_var_name(src).to_string();
+        if src.is_global() {
+            let label = self.global_var_name(src);
             self.push_inst(Inst::La { rd, label });
             self.build_lw(rd, 0, rd);
         } else if self.is_local_var(src) {
             let imm = self.offset(src) as i32;
             self.build_lw(rd, imm, "sp");
-        } else {
+        } else { // A temporary pointer.
             let rs = self.move_inst(src, None);
             self.build_lw(rd, 0, rs);
             self.free_reg(src, rs);
@@ -145,19 +147,20 @@ impl RiscvBuilder<'_> {
 
             res
         };
+
         self.push_global_def(value, init);
     }
 
-    pub fn build_store(&mut self, value: Value) -> Option<Reg> {
+    pub fn build_store(&mut self, value: Value) -> OptReg {
         let store = to_arm!(self, value, Store);
         let src = store.value();
         let dst = store.dest();
         let rs = self.move_inst(src, None);
 
-        if self.is_global_var(dst) {
+        if dst.is_global() {
             self.push_inst(Inst::La {
                 rd: "t0",
-                label: self.global_var_name(dst).to_string(),
+                label: self.global_var_name(dst),
             });
             self.build_sw(rs, 0, "t0");
             self.free_reg(src, rs);
@@ -171,10 +174,11 @@ impl RiscvBuilder<'_> {
             self.free_reg(src, rs);
             self.free_reg(dst, rd);
         }
+        
         None
     }
 
-    pub fn build_get_ptr(&mut self, value: Value, dst: Option<Reg>) -> Option<Reg> {
+    pub fn build_get_ptr(&mut self, value: Value, dst: OptReg) -> OptReg {
         let gp = to_arm!(self, value, GetPtr);
         let src = gp.src();
         let src_ty_kind = {
@@ -193,7 +197,7 @@ impl RiscvBuilder<'_> {
         let index = gp.index();
         let rd;
 
-        if self.is_global_var(src) {
+        if src.is_global() {
             let idx = self.move_inst(index, None);
             let off = self.alloc_reg(value, None);
             self.build_muli(off, idx, base_size as i32);
@@ -201,7 +205,7 @@ impl RiscvBuilder<'_> {
             self.free_reg(value, off);
             self.push_inst(Inst::La {
                 rd: t0,
-                label: self.global_var_name(src).to_string(),
+                label: self.global_var_name(src),
             });
             rd = self.alloc_reg(value, dst);
             push_inst!(self, Inst::Add, Binary, rd, t0, off);
@@ -215,7 +219,7 @@ impl RiscvBuilder<'_> {
             self.build_addi(t0, "sp", imm);
             rd = self.alloc_reg(value, dst);
             push_inst!(self, Inst::Add, Binary, rd, t0, off);
-        } else {
+        } else { // A temporary pointer.
             let rs = self.move_inst(src, None);
             let idx = self.move_inst(index, None);
             let off = self.alloc_reg(value, None);
@@ -230,7 +234,7 @@ impl RiscvBuilder<'_> {
         Some(rd)
     }
 
-    pub fn build_get_elem_ptr(&mut self, value: Value, dst: Option<Reg>) -> Option<Reg> {
+    pub fn build_get_elem_ptr(&mut self, value: Value, dst: OptReg) -> OptReg {
         let gep = to_arm!(self, value, GetElemPtr);
         let src = gep.src();
         let src_ty_kind = {
@@ -253,7 +257,7 @@ impl RiscvBuilder<'_> {
         let index = gep.index();
         let rd;
 
-        if self.is_global_var(src) {
+        if src.is_global() {
             let idx = self.move_inst(index, None);
             let off = self.alloc_reg(value, None);
             self.build_muli(off, idx, base_size as i32);
@@ -261,7 +265,7 @@ impl RiscvBuilder<'_> {
             self.free_reg(value, off);
             self.push_inst(Inst::La {
                 rd: t0,
-                label: self.global_var_name(src).to_string(),
+                label: self.global_var_name(src),
             });
             rd = self.alloc_reg(value, dst);
             push_inst!(self, Inst::Add, Binary, rd, t0, off);
@@ -275,7 +279,7 @@ impl RiscvBuilder<'_> {
             self.build_addi(t0, "sp", imm);
             rd = self.alloc_reg(value, dst);
             push_inst!(self, Inst::Add, Binary, rd, t0, off);
-        } else {
+        } else { // A temporary pointer.
             let rs = self.move_inst(src, None);
             let idx = self.move_inst(index, None);
             let off = self.alloc_reg(value, None);
@@ -290,14 +294,13 @@ impl RiscvBuilder<'_> {
         Some(rd)
     }
 
-    pub fn build_binary(&mut self, value: Value, dst: Option<Reg>) -> Option<Reg> {
+    pub fn build_binary(&mut self, value: Value, dst: OptReg) -> OptReg {
         use koopa::ir::BinaryOp::*;
 
         let binary = to_arm!(self, value, Binary);
         let lhs = self.move_inst(binary.lhs(), None);
         let rhs = self.move_inst(binary.rhs(), None);
         let rd = self.alloc_reg(value, dst);
-        // println!("lhs: {lhs:?}, rhs: {rhs:?}, rd: {rd:?}\n");
 
         match binary.op() {
             NotEq => {
@@ -336,12 +339,13 @@ impl RiscvBuilder<'_> {
             Xor => push_inst!(self, Inst::Xor, Binary, rd, rhs, lhs),
             _ => unreachable!(),
         }
+        
         self.free_reg(binary.lhs(), lhs);
         self.free_reg(binary.rhs(), rhs);
         Some(rd)
     }
 
-    pub fn build_branch(&mut self, value: Value) -> Option<Reg> {
+    pub fn build_branch(&mut self, value: Value) -> OptReg {
         let branch = to_arm!(self, value, Branch);
         let cond = self.move_inst(branch.cond(), None);
         self.push_inst(Inst::Beqz {
@@ -355,7 +359,7 @@ impl RiscvBuilder<'_> {
         None
     }
 
-    pub fn build_jump(&mut self, value: Value) -> Option<Reg> {
+    pub fn build_jump(&mut self, value: Value) -> OptReg {
         let jump = to_arm!(self, value, Jump);
         self.push_inst(Inst::J {
             label: self.block_name(jump.target()).to_string(),
@@ -363,7 +367,7 @@ impl RiscvBuilder<'_> {
         None
     }
 
-    pub fn build_call(&mut self, value: Value, dst: Option<Reg>) -> Option<Reg> {
+    pub fn build_call(&mut self, value: Value, dst: OptReg) -> OptReg {
         let call = to_arm!(self, value, Call);
         self.pass_args(call.args());
         self.save_regs();
@@ -380,7 +384,7 @@ impl RiscvBuilder<'_> {
         }
     }
 
-    pub fn build_return(&mut self, value: Value) -> Option<Reg> {
+    pub fn build_return(&mut self, value: Value) -> OptReg {
         let ret = to_arm!(self, value, Return);
         if let Some(value) = ret.value() {
             self.move_inst(value, Some("a0"));

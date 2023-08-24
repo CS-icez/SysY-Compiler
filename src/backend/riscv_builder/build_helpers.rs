@@ -57,7 +57,6 @@ impl RiscvBuilder<'_> {
 
     // TODO: coming up with a more suitable name.
     fn move_inst_to(&mut self, inst: Value, dst: Option<Reg>) -> Reg {
-        // println!("inst: {inst:#?}");
         let rs = self.reg_mgr.reg(inst);
         if dst == None || dst == Some(rs) { // Optimization.
             return rs;
@@ -77,11 +76,10 @@ impl RiscvBuilder<'_> {
 
     pub fn move_inst(&mut self, value: Value, dst: Option<Reg>) -> Reg {
         use ValueKind::*;
-
         match self.value_kind(value) {
-            Integer(_) => self.build_integer(value, dst).unwrap(),
-            // NOTE: In current implementation, `dst` must be `None` here.
-            FuncArgRef(_) => {
+            Integer(..) => self.build_integer(value, dst).unwrap(),
+            FuncArgRef(..) => {
+                // NOTE: In current implementation, `dst` must be `None` here.
                 assert_eq!(dst, None);
                 self.build_func_arg_ref(value).unwrap()
             }
@@ -151,7 +149,7 @@ impl RiscvBuilder<'_> {
         let value_data = dfg.value(value);
         let used_by = value_data.used_by();
         if used_by.len() > 1 {
-            assert!(matches!(value_data.kind(), Alloc(_)));
+            assert!(matches!(value_data.kind(), Alloc(..)));
             return None;
         } else if used_by.len() == 0 {
             return None;
@@ -160,9 +158,9 @@ impl RiscvBuilder<'_> {
             let user_data = dfg.value(user);
             match user_data.kind() {
                 // `load` only uses result of `alloc`.
-                Load(_) => None,
+                Load(..) => None,
                 // These instructions don't have dedicated registers.
-                Store(_) | Binary(_) | Branch(_) => None,
+                Store(..) | Binary(..) | Branch(..) => None,
                 // `call` requires the first 8 args stored in `a0` to `a7`.
                 Call(call) => {
                     let idx = call.args().iter().position(|&arg| arg == value).unwrap();
@@ -173,7 +171,7 @@ impl RiscvBuilder<'_> {
                     }
                 }
                 // `return` requires return value stored in `a0`.
-                Return(_) => Some("a0"),
+                Return(..) => Some("a0"),
                 // The rest instructions don't use results of others.
                 _ => panic!("Unexpected user: {user_data:#?}"),
             }
